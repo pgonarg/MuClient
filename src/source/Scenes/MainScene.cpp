@@ -9,6 +9,7 @@
 #include "Render/Textures/ZzzOpenglUtil.h"
 #include "Engine/Object/ZzzObject.h"
 #include "Engine/Object/ZzzCharacter.h"
+#include "Render/Shaders/ShadowMap.h"
 #include "Render/Terrain/ZzzLodTerrain.h"
 #include "Engine/Object/ZzzInterface.h"
 #include "Render/Effects/ZzzEffect.h"
@@ -31,6 +32,7 @@
 #include "Camera/CameraProjection.h"
 #include "Camera/CameraManager.h"
 #include "Camera/CameraMode.h"
+#include "Render/PostProcess/Bloom.h"
 #ifdef _EDITOR
 #include "Camera/FrustumRenderer.h"
 #include "Camera/CameraDebugLog.h"
@@ -397,6 +399,18 @@ static void RenderGameWorld(BYTE& byWaterMap, int width, int height)
     bool renderWeatherEffects = true;
 #endif
 
+    // --- Shadow map depth pass: render casters (objects + characters) from the
+    // sun's POV into the depth texture, before the normal world render. ---
+    extern bool g_UseShaderLighting;
+    if (SEASON3B::g_ShadowMap && SEASON3B::g_ShadowMap->IsValid()
+        && g_UseShaderLighting && EditFlag == EDIT_NONE && Hero)
+    {
+        SEASON3B::g_ShadowMap->BeginDepthPass(Hero->Object.Position);
+        RenderObjects();
+        RenderCharactersClient();
+        SEASON3B::g_ShadowMap->EndDepthPass(width, height);
+    }
+
     if (IsWaterTerrain() == false && renderTerrain)
     {
         if (gMapManager.WorldActive == WD_39KANTURU_3RD)
@@ -509,6 +523,7 @@ static void RenderGameWorld(BYTE& byWaterMap, int width, int height)
             battleCastle::EndFog();
         }
     }
+
 }
 
 /**
@@ -607,8 +622,14 @@ bool RenderMainScene()
         }
     }
 
+    // Redirect the 3-D render into the bloom FBO so we can run post-processing
+    // before the 2-D UI draws on top.  BeginCapture() is a no-op when bloom is
+    // disabled or the GPU doesn't support the required extensions.
+    Bloom::BeginCapture();
     SetupMainSceneViewport(width, height, byWaterMap, cameraPos);
     RenderGameWorld(byWaterMap, width, height);
+    // Threshold → blur → composite the glow layer onto the default framebuffer.
+    Bloom::ApplyBloom();
 
 #ifdef _EDITOR
     // Render spectated camera frustum wireframe when in FreeFly mode

@@ -35,6 +35,9 @@
 #include "Camera/ICamera.h"
 #include "Engine/Object/CullingConstants.h"
 
+// Shader rendering for modern graphics
+#include "Render/Shaders/ShaderRenderingHelper.h"
+
 // DevEditor function declarations
 #ifdef _EDITOR
 extern "C" bool DevEditor_ShouldShowCharacterPickBoxes();
@@ -8478,7 +8481,11 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
                 {
                     int Type = p->Type;
 
-                    RenderPartObject(&c->Object, Type, p, c->Light, o->Alpha, 0, 0, 0, false, false, Translate);
+                    // Try shader rendering first, fall back to original if unavailable
+                    if (!SEASON3B::ShaderRenderingHelper::TryRenderPartShaded(&c->Object, c, p, Type, o->Alpha))
+                    {
+                        RenderPartObject(&c->Object, Type, p, c->Light, o->Alpha, 0, 0, 0, false, false, Translate);
+                    }
                 }
                 else
                 {

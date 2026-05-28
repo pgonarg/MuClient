@@ -15,6 +15,10 @@
 #include "Engine/Object/ZzzOpenData.h"
 #include "Scenes/SceneCore.h"
 #include "Render/Models/ZzzBMD.h"
+#include "Render/PostProcess/Bloom.h"
+#include "Render/Shaders/ShaderLibrary.h"
+#include "Render/Shaders/MeshBufferManager.h"
+#include "Render/Shaders/ShadowMap.h"
 #include "Engine/Object/ZzzInfomation.h"
 #include "Engine/Object/ZzzObject.h"
 #include "Engine/AI/ZzzAI.h"
@@ -327,6 +331,22 @@ void DestroyWindow()
 #endif
 
     CUIMng::Instance().Release();
+
+    // Shutdown mesh buffer manager
+    if (SEASON3B::g_MeshBufferManager)
+    {
+        SEASON3B::g_MeshBufferManager->Shutdown();
+        delete SEASON3B::g_MeshBufferManager;
+        SEASON3B::g_MeshBufferManager = nullptr;
+    }
+
+    // Shutdown shader library
+    if (SEASON3B::g_ShaderLibrary)
+    {
+        SEASON3B::g_ShaderLibrary->Shutdown();
+        delete SEASON3B::g_ShaderLibrary;
+        SEASON3B::g_ShaderLibrary = nullptr;
+    }
 
     //. release font handle
     if (g_hFont)
@@ -1303,6 +1323,56 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLin
     ShowWindow(g_hWnd, SW_SHOW);
     SetForegroundWindow(g_hWnd);
     SetFocus(g_hWnd);
+
+    // Initialise GLEW now that a context is current.
+    // This resolves all modern OpenGL function pointers (shaders, FBOs, etc.)
+    // and must happen before any code that calls glCreateShader / glGenFramebuffers.
+    glewExperimental = GL_TRUE; // ensures core-profile functions are also exposed
+    GLenum glewErr = glewInit();
+    if (glewErr == GLEW_OK)
+    {
+        g_ErrorReport.Write(L"> GLEW init success.\r\n");
+
+        // Initialize shader system (must be after glewInit)
+        SEASON3B::g_ShaderLibrary = new SEASON3B::ShaderLibrary();
+        if (SEASON3B::g_ShaderLibrary && SEASON3B::g_ShaderLibrary->Initialize())
+        {
+            g_ErrorReport.Write(L"> Shader system initialized.\r\n");
+        }
+        else
+        {
+            g_ErrorReport.Write(L"> Shader system initialization failed.\r\n");
+        }
+
+        // Initialize mesh buffer manager for shader-based rendering
+        SEASON3B::g_MeshBufferManager = new SEASON3B::MeshBufferManager();
+        if (SEASON3B::g_MeshBufferManager && SEASON3B::g_MeshBufferManager->Initialize())
+        {
+            g_ErrorReport.Write(L"> Mesh buffer manager initialized.\r\n");
+        }
+        else
+        {
+            g_ErrorReport.Write(L"> Mesh buffer manager initialization failed.\r\n");
+        }
+
+        // Initialize the directional shadow map.
+        SEASON3B::g_ShadowMap = new SEASON3B::ShadowMap();
+        if (SEASON3B::g_ShadowMap && SEASON3B::g_ShadowMap->Initialize(2048))
+        {
+            g_ErrorReport.Write(L"> Shadow map initialized.\r\n");
+        }
+        else
+        {
+            g_ErrorReport.Write(L"> Shadow map initialization failed.\r\n");
+        }
+
+        Bloom::Initialize();
+    }
+    else
+    {
+        g_ErrorReport.Write(L"> GLEW init failed (bloom unavailable): %S\r\n",
+                            glewGetErrorString(glewErr));
+    }
 
     g_ErrorReport.Write(L"> OpenGL init success.\r\n");
     g_ErrorReport.AddSeparator();

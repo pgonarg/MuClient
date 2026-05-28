@@ -15,6 +15,7 @@ _deps/
 # CMake build directories
 build/
 build-mingw/
+build-mingw-stable/
 /cmake-build-debug/
 /cmake-build-release/
 /CMakeFiles/
@@ -41,3 +42,8 @@ build-mingw/
 **/*.log
 # Local-only files
 docs/reviews/
+
+# Transient build scratch
+compile.txt
+compile_error.txt
+out/

@@ -99,8 +99,8 @@ namespace SEASON3B
         int m_iMusicLevel;      // Music volume (0=off, 10=max)
         int m_iRenderLevel;
         bool m_bRenderAllEffects;
+        bool m_bBloomEnabled;   // Bloom/glow post-process effect
         int m_iResolutionIndex;
-        bool m_bWindowedMode;
         int m_iLanguageIndex;
 
         CNewUIComboBox m_ResolutionCombo;

@@ -17,6 +17,7 @@
 #include "Camera/CameraMove.h"
 #include "Engine/Physics/PhysicsManager.h"
 #include "UI/NewUI/NewUISystem.h"
+#include "Render/Shaders/ShaderLibrary.h"  // per-pixel character lighting
 
 BMD* Models;
 BMD* ModelsDump;
@@ -36,6 +37,17 @@ vec3_t LightTransform[MAX_MESH][MAX_VERTICES];
 vec3_t RenderArrayVertices[MAX_VERTICES * 3];
 vec4_t RenderArrayColors[MAX_VERTICES * 3];
 vec2_t RenderArrayTexCoords[MAX_VERTICES * 3];
+vec3_t RenderArrayNormals[MAX_VERTICES * 3];  // per-pixel lighting: bone-rotated normals
+
+// Per-pixel shader lighting (runtime toggle + the light vector used by Transform()).
+// g_ShaderLightPosition mirrors the LightPosition computed in BMD::Transform so the
+// fragment shader can reproduce the engine's lighting formula exactly, but per-pixel.
+bool   g_UseShaderLighting = true;
+vec3_t g_ShaderLightPosition = { 0.f, -1.5f, 0.f };
+
+// Set true during the shadow-map depth pass (defined in ShadowMap.cpp). When set,
+// RenderMesh skips its lighting shaders and just writes depth.
+extern bool g_ShadowDepthPass;
 
 bool  StopMotion = false;
 float ParentMatrix[3][4];
@@ -187,6 +199,10 @@ void BMD::Transform(float(*BoneMatrix)[3][4], vec3_t BoundingBoxMin, vec3_t Boun
 
         AngleMatrix(ShadowAngle, Matrix);
         VectorIRotate(Position, Matrix, LightPosition);
+
+        // Mirror this frame's light vector for the per-pixel shader so it can
+        // reproduce the engine's lighting (dot(N, LightPosition)*0.8+0.4) per pixel.
+        VectorCopy(LightPosition, g_ShaderLightPosition);
     }
     vec3_t BoundingMin;
     vec3_t BoundingMax;
@@ -1275,13 +1291,50 @@ void BMD::RenderMesh(int meshIndex, int renderFlags, float alpha, int blendMeshI
         || finalRenderFlags == RENDER_CHROME4
         || finalRenderFlags == RENDER_OIL;
 
+    // Per-pixel shader lighting: only the standard lit textured path (not shadow
+    // passes, chrome/oil/bright/color, or unlit blend meshes). Everything else
+    // falls through to the original per-vertex color path unchanged.
+    const bool useShader = g_UseShaderLighting && !g_ShadowDepthPass
+        && SEASON3B::g_ShaderLibrary != nullptr && SEASON3B::g_ShaderLibrary->IsPhongShaderValid()
+        && finalRenderFlags == RENDER_TEXTURE
+        && enableLight
+        && (renderFlags & RENDER_SHADOWMAP) == 0;
+
+    // Per-pixel chrome/metal/oil reflection: route the environment-mapping
+    // overlay passes through the chrome shader (recomputes the reflection coord
+    // per pixel from the interpolated normal). Falls back to per-vertex g_chrome.
+    const bool useChromeShader = g_UseShaderLighting && !g_ShadowDepthPass
+        && SEASON3B::g_ShaderLibrary != nullptr && SEASON3B::g_ShaderLibrary->IsChromeShaderValid()
+        && (finalRenderFlags == RENDER_CHROME || finalRenderFlags == RENDER_CHROME4 || finalRenderFlags == RENDER_OIL)
+        && (renderFlags & RENDER_SHADOWMAP) == 0;
+
+    // Chrome variant selector — mirrors the priority order of the g_chrome
+    // computation above: 0=CHROME2 1=CHROME3 2=CHROME4 3=CHROME5 4=CHROME6
+    // 5=CHROME7 6=OIL 7=CHROME 8=METAL/default.
+    int chromeMode = 8;
+    if (useChromeShader)
+    {
+        if      ((renderFlags & RENDER_CHROME2) == RENDER_CHROME2) chromeMode = 0;
+        else if ((renderFlags & RENDER_CHROME3) == RENDER_CHROME3) chromeMode = 1;
+        else if ((renderFlags & RENDER_CHROME4) == RENDER_CHROME4) chromeMode = 2;
+        else if ((renderFlags & RENDER_CHROME5) == RENDER_CHROME5) chromeMode = 3;
+        else if ((renderFlags & RENDER_CHROME6) == RENDER_CHROME6) chromeMode = 4;
+        else if ((renderFlags & RENDER_CHROME7) == RENDER_CHROME7) chromeMode = 5;
+        else if ((renderFlags & RENDER_OIL)     == RENDER_OIL)     chromeMode = 6;
+        else if ((renderFlags & RENDER_CHROME)  == RENDER_CHROME)  chromeMode = 7;
+        else                                                       chromeMode = 8;
+    }
+
+    const bool useColorArray = enableColor && !useShader && !useChromeShader;
+
     glEnableClientState(GL_VERTEX_ARRAY);
-    if (enableColor) glEnableClientState(GL_COLOR_ARRAY);
+    if (useColorArray) glEnableClientState(GL_COLOR_ARRAY);
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 
     auto vertices = RenderArrayVertices;
     auto colors = RenderArrayColors;
     auto texCoords = RenderArrayTexCoords;
+    auto normalsArr = RenderArrayNormals;
 
     int target_vertex_index = -1;
     for (int j = 0; j < m->NumTriangles; j++)
@@ -1301,6 +1354,11 @@ void BMD::RenderMesh(int meshIndex, int renderFlags, float alpha, int blendMeshI
             texCoords[target_vertex_index][1] = texco.TexCoordV;
 
             int normalIndex = triangle->NormalIndex[k];
+            if (useShader || useChromeShader)
+            {
+                // Bone-rotated, object-local normal for per-pixel lighting/reflection.
+                VectorCopy(NormalTransform[meshIndex][normalIndex], normalsArr[target_vertex_index]);
+            }
             switch (finalRenderFlags)
             {
                 case RENDER_TEXTURE:
@@ -1321,20 +1379,30 @@ void BMD::RenderMesh(int meshIndex, int renderFlags, float alpha, int blendMeshI
                 }
                 case RENDER_CHROME:
                 {
-                    texCoords[target_vertex_index][0] = g_chrome[normalIndex][0];
-                    texCoords[target_vertex_index][1] = g_chrome[normalIndex][1];
+                    if (!useChromeShader)
+                    {
+                        texCoords[target_vertex_index][0] = g_chrome[normalIndex][0];
+                        texCoords[target_vertex_index][1] = g_chrome[normalIndex][1];
+                    }
                     break;
                 }
                 case RENDER_CHROME4:
                 {
-                    texCoords[target_vertex_index][0] = g_chrome[normalIndex][0] + blendMeshTextureCoordU;
-                    texCoords[target_vertex_index][1] = g_chrome[normalIndex][1] + blendMeshTextureCoordV;
+                    if (!useChromeShader)
+                    {
+                        texCoords[target_vertex_index][0] = g_chrome[normalIndex][0] + blendMeshTextureCoordU;
+                        texCoords[target_vertex_index][1] = g_chrome[normalIndex][1] + blendMeshTextureCoordV;
+                    }
                     break;
                 }
                 case RENDER_OIL:
                 {
-                    texCoords[target_vertex_index][0] = g_chrome[normalIndex][0] * texCoords[target_vertex_index][0] + blendMeshTextureCoordU;
-                    texCoords[target_vertex_index][1] = g_chrome[normalIndex][1] * texCoords[target_vertex_index][1] + blendMeshTextureCoordV;
+                    if (!useChromeShader)
+                    {
+                        texCoords[target_vertex_index][0] = g_chrome[normalIndex][0] * texCoords[target_vertex_index][0] + blendMeshTextureCoordU;
+                        texCoords[target_vertex_index][1] = g_chrome[normalIndex][1] * texCoords[target_vertex_index][1] + blendMeshTextureCoordV;
+                    }
+                    // else: keep the base texcoord intact; the OIL shader needs it.
                     break;
                 }
             }
@@ -1361,14 +1429,48 @@ void BMD::RenderMesh(int meshIndex, int renderFlags, float alpha, int blendMeshI
         }
     }
 
+    if (useShader)
+    {
+        // Feed bone-rotated normals to gl_Normal and activate the per-pixel
+        // lighting shader. The texture is already bound on unit 0 by the
+        // RENDER_TEXTURE branch above; vertex/texcoord arrays feed gl_Vertex /
+        // gl_MultiTexCoord0, and gl_ModelViewProjectionMatrix matches the
+        // fixed-function transform exactly.
+        glEnableClientState(GL_NORMAL_ARRAY);
+        glNormalPointer(GL_FLOAT, 0, normalsArr);
+        SEASON3B::g_ShaderLibrary->UseCharacterLighting(g_ShaderLightPosition, BodyLight, alpha);
+    }
+    else if (useChromeShader)
+    {
+        // Per-pixel chrome/metal/oil reflection. The chrome bitmap is already
+        // bound on unit 0; the shader recomputes the reflection coordinate per
+        // pixel from the interpolated normal. Mirror the engine's per-frame
+        // chrome parameters so the formula matches exactly.
+        glEnableClientState(GL_NORMAL_ARRAY);
+        glNormalPointer(GL_FLOAT, 0, normalsArr);
+
+        const float chromeWave  = wave;
+        const float chromeWave2 = (float)((int)WorldTime % 5000) * 0.00024f - 0.4f;
+        const float chromeL[3]  = { (float)cos(WorldTime * 0.001), (float)sin(WorldTime * 0.002), 1.0f };
+        const float chromeBlend[2] = { blendMeshTextureCoordU, blendMeshTextureCoordV };
+        SEASON3B::g_ShaderLibrary->UseChromeLighting(chromeMode, BodyLight, alpha,
+            chromeWave, chromeWave2, (float)WorldTime, chromeL, chromeBlend);
+    }
+
     glVertexPointer(3, GL_FLOAT, 0, vertices);
-    if (enableColor) glColorPointer(4, GL_FLOAT, 0, colors);
+    if (useColorArray) glColorPointer(4, GL_FLOAT, 0, colors);
     glTexCoordPointer(2, GL_FLOAT, 0, texCoords);
 
     glDrawArrays(GL_TRIANGLES, 0, m->NumTriangles * 3);
 
+    if (useShader || useChromeShader)
+    {
+        glUseProgram(0);  // back to fixed-function for everything else
+        glDisableClientState(GL_NORMAL_ARRAY);
+    }
+
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-    if (enableColor) glDisableClientState(GL_COLOR_ARRAY);
+    if (useColorArray) glDisableClientState(GL_COLOR_ARRAY);
     glDisableClientState(GL_VERTEX_ARRAY);
 }
 

@@ -360,13 +360,18 @@ if (DOTNET_EXECUTABLE)
     message(STATUS ".NET Client Library will build for x86 (CMAKE_SIZEOF_VOID_P=${CMAKE_SIZEOF_VOID_P})")
   endif()
 
+  # NativeAOT linker discovery: dotnet ILCompiler uses vswhere.exe to find the MSVC linker.
+  # When building from MinGW/MSYS2 shells, vswhere.exe may not be on PATH.
+  # Prepend the VS Installer directory so vswhere.exe is always found.
+  set(VSWHERE_INSTALLER_DIR "C:/Program Files (x86)/Microsoft Visual Studio/Installer")
+  set(DOTNET_BUILD_PATH "${VSWHERE_INSTALLER_DIR};$ENV{PATH}")
+
   if (DOTNET_CAN_BUILD_CLIENT_LIBRARY)
     add_custom_command(
             OUTPUT "${DOTNET_DLL_PATH}"
             COMMAND ${CMAKE_COMMAND} -E echo "--- C# Changes Detected: Rebuilding Client Library ---"
             COMMAND ${CMAKE_COMMAND} -E env
-                    "NUGET_PACKAGES=${DOTNET_NUGET_DIR_NATIVE}"
-                    "DOTNET_CLI_HOME=${DOTNET_TEMP_DIR_NATIVE}"
+                    "PATH=${DOTNET_BUILD_PATH}"
                     "TEMP=${DOTNET_TEMP_DIR_NATIVE}"
                     "TMP=${DOTNET_TEMP_DIR_NATIVE}"
                     "${DOTNET_EXECUTABLE}" publish "${DOTNET_PROJ_NATIVE}" -c $<CONFIG> -r ${DOTNET_RID} -p:PlatformTarget=${DOTNET_PLATFORM} -o "${DOTNET_TEMP_OUTPUT_NATIVE}" --nologo
@@ -447,8 +452,6 @@ if (DOTNET_EXECUTABLE)
     add_custom_command(
       OUTPUT ${RESX_GEN_HEADERS} ${RESX_GEN_SOURCES}
       COMMAND ${CMAKE_COMMAND} -E env
-              "NUGET_PACKAGES=${DOTNET_NUGET_DIR_NATIVE}"
-              "DOTNET_CLI_HOME=${DOTNET_TEMP_DIR_NATIVE}"
               "${DOTNET_EXECUTABLE}" run --project "${RESXGEN_PROJ_NATIVE}" -c $<CONFIG>
               -- --input "${RESX_INPUT_DIR_NATIVE}" --output "${RESX_OUTPUT_DIR_NATIVE}"
               --wide-groups Game,Dialog
@@ -472,7 +475,15 @@ endif()
 # For turbojpeg and wzAudio we link against the logically named libraries,
 # which must be provided as MinGW-compatible .a import libraries.
 if (CMAKE_CXX_COMPILER MATCHES "mingw32" OR CMAKE_CXX_COMPILER MATCHES "w64-mingw32")
+  # Resolve architecture subdir for import libraries (e.g. libglew32.dll.a)
+  if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(MINGW_LIB_ARCH_DIR "x64")
+  else()
+    set(MINGW_LIB_ARCH_DIR "x86")
+  endif()
+
   target_link_directories(Main PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/lib/${MINGW_LIB_ARCH_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/lib"
   )
 
@@ -517,6 +528,7 @@ if (CMAKE_CXX_COMPILER MATCHES "mingw32" OR CMAKE_CXX_COMPILER MATCHES "w64-ming
     dxguid
     opengl32
     glu32
+    glew32
     winmm
     ws2_32
     version

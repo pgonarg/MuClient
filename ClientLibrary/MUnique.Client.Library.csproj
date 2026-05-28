@@ -38,6 +38,11 @@
   </ItemGroup>
 
 
+  <!-- Provide __ltof3 / __ultof3 stubs for .NET 10 NativeAOT on x86 with MSVC 14.32 -->
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'win-x86'">
+    <LinkerArg Include="&quot;$(MSBuildThisFileDirectory)float_helpers.obj&quot;" />
+  </ItemGroup>
+
   <Target Name="PreBuild" BeforeTargets="PreBuildEvent" Condition="'$(ci)'!='true'">
     <!-- We only run the transformation locally on our dev environment with visual studio.
         The CI environment is identified by the parameter 'ci'. It's set in the azure pipelines and Dockerfile.

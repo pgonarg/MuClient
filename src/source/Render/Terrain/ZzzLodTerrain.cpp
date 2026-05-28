@@ -28,6 +28,10 @@
 #include "Camera/CameraMove.h"
 #include "Camera/CameraProjection.h"
 #include "Camera/CameraManager.h"
+#include "Render/Shaders/ShaderLibrary.h"  // terrain shader
+
+// Defined in ZzzBMD.cpp: master toggle for shader-based rendering.
+extern bool g_UseShaderLighting;
 #include "Camera/Frustum.h"
 #include "Camera/ConvexHull2D.h"
 #include "Engine/Object/CullingConstants.h"
@@ -929,6 +933,19 @@ void SetTerrainLight(float xf, float yf, vec3_t Light, int Range, vec3_t* Buffer
 
 void AddTerrainLight(float xf, float yf, vec3_t Light, int Range, vec3_t* Buffer)
 {
+    // When shader lighting is active, treat this emitter as a real per-pixel
+    // point light instead of smearing it into the coarse 2D grid. Registering it
+    // for the shader and skipping the grid add keeps PrimaryTerrainLight as the
+    // static base (no double-counting) while the shader lights all objects and
+    // terrain per pixel with proper 3D falloff.
+    if (g_UseShaderLighting && Buffer == PrimaryTerrainLight
+        && SEASON3B::g_ShaderLibrary && SEASON3B::g_ShaderLibrary->IsPhongShaderValid())
+    {
+        float z = RequestTerrainHeight(xf, yf) + 120.f;  // raise the light off the ground
+        SEASON3B::g_ShaderLibrary->AddDynamicLight(xf, yf, z, Light, (float)Range * TERRAIN_SCALE);
+        return;
+    }
+
     auto rf = (float)Range;
 
     xf = (xf / TERRAIN_SCALE);
@@ -2765,6 +2782,12 @@ extern int EnableEvent;
 
 void InitTerrainLight()
 {
+    // Begin a new frame of dynamic point lights: promote the set collected last
+    // frame to active and reset the collector. Emitters register this frame via
+    // AddTerrainLight (called during object processing).
+    if (SEASON3B::g_ShaderLibrary)
+        SEASON3B::g_ShaderLibrary->BeginFrameLights();
+
     int xi, yi;
     yi = FrustrumBoundMinY;
     for (; yi <= FrustrumBoundMaxY + 3; yi += 1)
@@ -3092,8 +3115,27 @@ void RenderTerrain(bool EditFlag)
         InitCollisionDetectLineToFace();
     }
 
+    // Capture the camera view matrix (modelview here is the pure view transform,
+    // before any object push) and hand it to the shader library so it can place
+    // the dynamic point lights in view space for both terrain and object shaders.
+    if (!EditFlag && SEASON3B::g_ShaderLibrary)
+    {
+        float viewMatrix[16];
+        glGetFloatv(GL_MODELVIEW_MATRIX, viewMatrix);
+        SEASON3B::g_ShaderLibrary->SetViewMatrix(viewMatrix);
+    }
+
+    // Route the ground tile passes through the terrain shader (programmable
+    // pipeline). Faithful texColor * vertexColor modulate, so visually identical
+    // to fixed-function. Only in-game (!EditFlag), gated by the master toggle.
+    const bool terrainShader = !EditFlag && g_UseShaderLighting
+        && SEASON3B::g_ShaderLibrary != nullptr
+        && SEASON3B::g_ShaderLibrary->IsTerrainShaderValid();
+
     TerrainFlag = TERRAIN_MAP_NORMAL;
+    if (terrainShader) SEASON3B::g_ShaderLibrary->UseTerrainShader();
     RenderTerrainFrustrum(EditFlag);
+    if (terrainShader) glUseProgram(0);
     //
     if (EditFlag && SelectFlag)
     {
@@ -3105,7 +3147,9 @@ void RenderTerrain(bool EditFlag)
         if (TerrainGrassEnable && gMapManager.WorldActive != WD_7ATLANSE && !IsDoppelGanger3())
         {
             TerrainFlag = TERRAIN_MAP_GRASS;
+            if (terrainShader) SEASON3B::g_ShaderLibrary->UseTerrainShader();
             RenderTerrainFrustrum(EditFlag);
+            if (terrainShader) glUseProgram(0);
         }
 #ifdef _EDITOR
         if (s_bShowTileGrid)
