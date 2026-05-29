@@ -1,5 +1,6 @@
 #include "BmdToGltfConverter.h"
 #include "GltfLoader.h"
+#include "GltfFileWriter.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <cstring>
@@ -266,12 +267,10 @@ bool BmdToGltfConverter::ConvertAndSave(
     auto gltfModel = Convert(bmdModel, options);
     if (!gltfModel) return false;
 
-    // TODO: Implement GLB/glTF file writing using nlohmann/json
-    // This would involve:
-    // 1. Creating JSON structure with accessors, bufferViews, buffers
-    // 2. Serializing binary vertex/index data
-    // 3. Writing .glb or .gltf + .bin files
-
-    // For now, return true as placeholder
-    return true;
+    // Write to GLB or glTF format
+    if (options.singleFile) {
+        return GltfFileWriter::WriteGlb(outputPath, *gltfModel);
+    } else {
+        return GltfFileWriter::WriteGltf(outputPath, *gltfModel);
+    }
 }
