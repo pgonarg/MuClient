@@ -79,7 +79,7 @@ varying vec3 vNormal;
 varying vec3 vViewPos;
 varying vec3 vViewNormal;
 
-// Returns 1.0 = fully lit, 0.0 = fully shadowed (3x3 PCF).
+// Returns 1.0 = fully lit, 0.0 = fully shadowed (5x5 PCF).
 float computeShadow()
 {
     if (uShadowEnabled < 0.5) return 1.0;
@@ -91,12 +91,12 @@ float computeShadow()
     const float bias  = 0.0025;
     const float texel = 1.0 / 2048.0;
     float sum = 0.0;
-    for (int x = -1; x <= 1; ++x)
-        for (int y = -1; y <= 1; ++y) {
+    for (int x = -2; x <= 2; ++x)
+        for (int y = -2; y <= 2; ++y) {
             float closest = texture2D(uShadowMap, p.xy + vec2(float(x), float(y)) * texel).r;
             sum += (p.z - bias > closest) ? 0.0 : 1.0;
         }
-    return sum / 9.0;
+    return sum / 25.0;
 }
 
 void main()
@@ -336,12 +336,12 @@ float computeShadow()
     const float bias  = 0.0025;
     const float texel = 1.0 / 2048.0;
     float sum = 0.0;
-    for (int x = -1; x <= 1; ++x)
-        for (int y = -1; y <= 1; ++y) {
+    for (int x = -2; x <= 2; ++x)
+        for (int y = -2; y <= 2; ++y) {
             float closest = texture2D(uShadowMap, p.xy + vec2(float(x), float(y)) * texel).r;
             sum += (p.z - bias > closest) ? 0.0 : 1.0;
         }
-    return sum / 9.0;
+    return sum / 25.0;
 }
 
 void main()

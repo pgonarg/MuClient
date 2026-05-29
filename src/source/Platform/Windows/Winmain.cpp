@@ -16,6 +16,7 @@
 #include "Scenes/SceneCore.h"
 #include "Render/Models/ZzzBMD.h"
 #include "Render/PostProcess/Bloom.h"
+#include "Render/PostProcess/FXAAManager.h"
 #include "Render/PostProcess/ToneMapping.h"
 #include "Render/Shaders/ShaderLibrary.h"
 #include "Render/Shaders/MeshBufferManager.h"
@@ -344,6 +345,9 @@ void DestroyWindow()
 
     // Shutdown tone mapping
     ToneMapping::Shutdown();
+
+    // Shutdown FXAA post-process
+    FXAAManager::Shutdown();
 
     // Shutdown mesh buffer manager
     if (SEASON3B::g_MeshBufferManager)
@@ -1401,10 +1405,20 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLin
         }
 
         Bloom::Initialize();
+
+        // Initialize FXAA post-process (fast approximate anti-aliasing)
+        if (FXAAManager::Initialize())
+        {
+            g_ErrorReport.Write(L"> FXAA initialized.\r\n");
+        }
+        else
+        {
+            g_ErrorReport.Write(L"> FXAA initialization failed.\r\n");
+        }
     }
     else
     {
-        g_ErrorReport.Write(L"> GLEW init failed (bloom unavailable): %S\r\n",
+        g_ErrorReport.Write(L"> GLEW init failed (bloom/FXAA unavailable): %S\r\n",
                             glewGetErrorString(glewErr));
     }
 

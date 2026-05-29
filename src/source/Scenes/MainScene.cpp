@@ -34,6 +34,7 @@
 #include "Camera/CameraManager.h"
 #include "Camera/CameraMode.h"
 #include "Render/PostProcess/Bloom.h"
+#include "Render/PostProcess/FXAAManager.h"
 #include "Render/PostProcess/ToneMapping.h"
 #ifdef _EDITOR
 #include "Camera/FrustumRenderer.h"
@@ -699,6 +700,10 @@ bool RenderMainScene()
     // When Bloom is on, uses Bloom's scene texture. When off, gracefully skips (tone mapping checks for valid texture).
     unsigned int sceneColorTex = Bloom::IsEnabled() ? Bloom::GetSceneColorTexture() : 0;
     ToneMapping::Apply(sceneColorTex);
+
+    // Apply FXAA (Fast Approximate Anti-Aliasing) as the final post-process
+    // Smooths jagged edges without excessive blur. Reads current framebuffer and outputs to screen.
+    FXAAManager::Apply();
 
 #ifdef _EDITOR
     // Render spectated camera frustum wireframe when in FreeFly mode
