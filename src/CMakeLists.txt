@@ -565,3 +565,19 @@ if(ENABLE_EDITOR)
     target_link_libraries(Main PRIVATE opengl32 dwmapi)
   endif()
 endif()
+
+# ============================================================================
+# glTF Asset Management: Copy modified glTF files to build output
+# ============================================================================
+# This post-build command scans the Models_gltf/ directory for files newer
+# than the last build, and copies modified assets to the build output.
+# Allows user to edit glTF models and have changes automatically included.
+
+add_custom_command(TARGET Main POST_BUILD
+  COMMAND "${CMAKE_COMMAND}"
+    "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../../Data/Models_gltf"
+    "-DOUTPUT_DIR=$<TARGET_FILE_DIR:Main>"
+    "-P" "${REPO_ROOT}/cmake/CopyModifiedAssets.cmake"
+  COMMENT "Checking for modified glTF assets..."
+  VERBATIM
+)
