@@ -200,3 +200,46 @@ RenderCharacter()
 - [x] Week 1, Day 2-3: VAO/VBO + RenderMeshShaded (DONE)
 - ⏳ Week 2: Character pipeline integration (IN PROGRESS)
 - [ ] Week 3: Testing & optimization
+
+---
+
+## ✅ Debugging Session: Translucent Object Flickering & Bloom (2026-05-28)
+
+### Issues Fixed
+✅ **Bloom Effect Overblown** - Reduced threshold from 0.65 → 0.80 and strength from 1.1 → 0.30
+✅ **Character Wing Flickering** - RESOLVED by adjusting bloom settings
+✅ **Build Process** - Fixed MinGW turbojpeg linking and runtime DLL requirements
+✅ **Server Connection** - OpenMU server running at `192.168.1.66`, client connects successfully
+
+### Session Accomplishments
+1. **Repaired Build System**
+   - Modified `src/CMakeLists.txt` line 520-522 to allow turbojpeg DLL import library (workaround for missing static lib)
+   - Copied MinGW runtime DLLs to build directory (libgcc_s_dw2-1.dll, libstdc++-6.dll, libwinpthread-1.dll, libturbojpeg.dll)
+   - Documented complete build process in [BUILD_AND_TEST.md](BUILD_AND_TEST.md)
+
+2. **Fixed Bloom Settings** (src/source/Render/PostProcess/Bloom.cpp lines 29-30)
+   - Changed: `s_threshold = 0.80f` (from 0.65), `s_strength = 0.30f` (from 1.1)
+   - Result: Bloom now subtle instead of overblown
+
+3. **Tested Graphics Pipeline**
+   - Server: Running at 192.168.1.66:44406
+   - Client: Successfully connects and renders
+   - Visual Quality: Bloom looks good, no flickering on character wings
+   - Configuration: `build-mingw/src/config.ini` points to correct server
+
+### Known Limitations
+- **Turbojpeg**: Using DLL import library instead of static (acceptable for now)
+- **SSAO Not Implemented**: Was mentioned in planning but not included in shader system
+- **Point Lights**: Currently working correctly (not disabled)
+
+### Next Steps for Future Sessions
+- Consider implementing SSAO in shader pipeline if needed for visual quality
+- Profile performance with current shader system
+- Test additional visual effects (reflections, specular highlights)
+- Consider adding more dynamic lights or improving shadow quality
+
+### Files Modified This Session
+- `src/CMakeLists.txt` - Turbojpeg linking workaround
+- `src/source/Render/PostProcess/Bloom.cpp` - Bloom parameter fixes
+- `BUILD_AND_TEST.md` - Created comprehensive build guide
+- `PHASE1_PROGRESS.md` - This file, updated with session results

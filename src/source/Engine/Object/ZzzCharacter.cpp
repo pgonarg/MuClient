@@ -8299,7 +8299,8 @@ void RenderLinkObject(float x, float y, float z, CHARACTER* c, PART_t* f, int Ty
         case MODEL_WING + 132:        // Small Wings of Elf
         case MODEL_WING + 133:        // Small Wings of Heaven
         case MODEL_WING + 134:        // Small Wings of Satan
-            b->RenderBodyShadow();
+            // Disabled: RenderBodyShadow() was creating duplicate shadow
+            // b->RenderBodyShadow();
             break;
             
         case MODEL_CAPE_OF_LORD:    // Cape of Lord
@@ -8308,12 +8309,14 @@ void RenderLinkObject(float x, float y, float z, CHARACTER* c, PART_t* f, int Ty
         case MODEL_CAPE_OF_OVERRULE:        // Cape of Overrule
         case MODEL_WING + 130:        // Small Cape of Lord
         case MODEL_WING + 135:        // Little Warrior's Cloak
-            b->RenderBodyShadow(-1, -1, -1, -1, o->m_pCloth, o->m_byNumCloth);
+            // Disabled: RenderBodyShadow() was creating duplicate shadow
+            // b->RenderBodyShadow(-1, -1, -1, -1, o->m_pCloth, o->m_byNumCloth);
             break;
         default:
             if (o->m_pCloth)
             {
-                b->RenderBodyShadow(-1, -1, -1, -1, o->m_pCloth, o->m_byNumCloth);
+                // Disabled: RenderBodyShadow() was creating duplicate shadow
+                // b->RenderBodyShadow(-1, -1, -1, -1, o->m_pCloth, o->m_byNumCloth);
             }
             break;
         }
@@ -8481,15 +8484,19 @@ void RenderCharacter(CHARACTER* c, OBJECT* o, int Select)
                 {
                     int Type = p->Type;
 
-                    // Try shader rendering first, fall back to original if unavailable
-                    if (!SEASON3B::ShaderRenderingHelper::TryRenderPartShaded(&c->Object, c, p, Type, o->Alpha))
-                    {
-                        RenderPartObject(&c->Object, Type, p, c->Light, o->Alpha, 0, 0, 0, false, false, Translate);
-                    }
+                    // Use shader rendering path (disabling legacy fallback to avoid double shadows)
+                    SEASON3B::ShaderRenderingHelper::TryRenderPartShaded(&c->Object, c, p, Type, o->Alpha);
+                    // Legacy fallback disabled - use shader path only to avoid duplicate shadow from fixed-function pipeline
+                    // if (!SEASON3B::ShaderRenderingHelper::TryRenderPartShaded(&c->Object, c, p, Type, o->Alpha))
+                    // {
+                    //     RenderPartObject(&c->Object, Type, p, c->Light, o->Alpha, 0, 0, 0, false, false, Translate);
+                    // }
                 }
                 else
                 {
-                    RenderPartObject(&c->Object, MODEL_SHADOW_BODY, NULL, c->Light, o->Alpha, 0, 0, 0, false, false, Translate);
+                    // Disabled: MODEL_SHADOW_BODY was creating a duplicate shadow
+                    // Characters now use only the directional shadow map
+                    // RenderPartObject(&c->Object, MODEL_SHADOW_BODY, NULL, c->Light, o->Alpha, 0, 0, 0, false, false, Translate);
                 }
             }
 

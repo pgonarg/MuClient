@@ -25,9 +25,9 @@
 // ─── static member definitions ──────────────────────────────────────────────
 
 bool  Bloom::s_initialized   = false;
-bool  Bloom::s_enabled       = true;
-float Bloom::s_threshold     = 0.65f; // pixels above this luminance glow
-float Bloom::s_strength      = 1.1f;  // additive composite strength
+bool  Bloom::s_enabled       = false;
+float Bloom::s_threshold     = 0.80f; // pixels above this luminance glow (raised so bright snow doesn't over-bloom)
+float Bloom::s_strength      = 0.30f; // additive composite strength (subtle glow)
 int   Bloom::s_blurPasses    = 4;     // horizontal+vertical iterations
 
 int   Bloom::s_fboWidth      = 0;

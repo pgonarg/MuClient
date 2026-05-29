@@ -517,8 +517,9 @@ if (CMAKE_CXX_COMPILER MATCHES "mingw32" OR CMAKE_CXX_COMPILER MATCHES "w64-ming
     set(CMAKE_FIND_LIBRARY_SUFFIXES "${_MU_OLD_FIND_LIBRARY_SUFFIXES}")
     unset(_MU_OLD_FIND_LIBRARY_SUFFIXES)
   endif()
-  if (NOT MU_TURBOJPEG_STATIC_LIB OR MU_TURBOJPEG_STATIC_LIB MATCHES "\\.dll\\.a$")
-    message(FATAL_ERROR "Static libturbojpeg not found (libturbojpeg.a) or CMake picked an import library (.dll.a): '${MU_TURBOJPEG_STATIC_LIB}'. Install/build a MinGW-w64 static libjpeg-turbo to avoid shipping libturbojpeg.dll, or set MU_TURBOJPEG_STATIC_LIB to the full path of libturbojpeg.a.")
+  # Temporarily allow DLL import library for building (FIXME: use static lib)
+  if (NOT MU_TURBOJPEG_STATIC_LIB)
+    message(FATAL_ERROR "Static libturbojpeg not found (libturbojpeg.a). Install/build a MinGW-w64 static libjpeg-turbo, or set MU_TURBOJPEG_STATIC_LIB to the full path of libturbojpeg.a.")
   endif()
 
   target_link_libraries(Main PRIVATE

@@ -57,6 +57,18 @@ public:
         s_blurPasses = (n < 1) ? 1 : (n > 8) ? 8 : n;
     }
 
+    // ── Accessors for post-processing integration (SSAO, etc.) ──────────────────
+    /// Get the scene color texture (rendered 3D world before bloom composite)
+    static unsigned int GetSceneColorTexture() { return s_sceneColorTex; }
+    /// Get the scene depth renderbuffer (for depth-based post-effects like SSAO)
+    static unsigned int GetSceneDepthRBO()     { return s_sceneDepthRbo; }
+    /// Get current FBO dimensions
+    static void GetFBODimensions(int& outWidth, int& outHeight)
+    {
+        outWidth = s_fboWidth;
+        outHeight = s_fboHeight;
+    }
+
 private:
     static bool  CreateFBOs(int width, int height);
     static void  DestroyFBOs();

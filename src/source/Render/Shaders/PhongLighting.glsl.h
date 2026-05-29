@@ -110,12 +110,13 @@ void main()
     float shadow = computeShadow();
 
     // Per-pixel re-evaluation of the engine's per-vertex formula:
-    //   Luminosity = dot(N, L) * 0.8 + 0.4, min-clamped to 0.2
-    // The directional (sun) part is gated by the shadow factor; the 0.4 ambient
+    //   Luminosity = dot(N, L) * 0.4 + 0.2, min-clamped to 0.15
+    // Reduced directional light (0.8 -> 0.4) so dynamic light emitters stand out.
+    // The directional (sun) part is gated by the shadow factor; the 0.2 ambient
     // floor stays, so shadowed surfaces darken to ambient rather than black.
     vec3  N = normalize(vNormal);
-    float luminosity = dot(N, uLightDir) * 0.8 * shadow + 0.4;
-    luminosity = max(luminosity, 0.2);
+    float luminosity = dot(N, uLightDir) * 0.4 * shadow + 0.2;
+    luminosity = max(luminosity, 0.15);
 
     // Match fixed-function: the engine set vertex colors (BodyLight * intensity)
     // via glColor, which clamps each component to [0,1] before the texture

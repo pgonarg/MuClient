@@ -16,8 +16,10 @@
 #include "Scenes/SceneCore.h"
 #include "Render/Models/ZzzBMD.h"
 #include "Render/PostProcess/Bloom.h"
+#include "Render/PostProcess/ToneMapping.h"
 #include "Render/Shaders/ShaderLibrary.h"
 #include "Render/Shaders/MeshBufferManager.h"
+#include "Render/Shaders/SSAOManager.h"
 #include "Render/Shaders/ShadowMap.h"
 #include "Engine/Object/ZzzInfomation.h"
 #include "Engine/Object/ZzzObject.h"
@@ -331,6 +333,17 @@ void DestroyWindow()
 #endif
 
     CUIMng::Instance().Release();
+
+    // Shutdown SSAO manager
+    if (SEASON3B::g_SSAOManager)
+    {
+        SEASON3B::g_SSAOManager->Shutdown();
+        delete SEASON3B::g_SSAOManager;
+        SEASON3B::g_SSAOManager = nullptr;
+    }
+
+    // Shutdown tone mapping
+    ToneMapping::Shutdown();
 
     // Shutdown mesh buffer manager
     if (SEASON3B::g_MeshBufferManager)
@@ -1353,6 +1366,27 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLin
         else
         {
             g_ErrorReport.Write(L"> Mesh buffer manager initialization failed.\r\n");
+        }
+
+        // Initialize SSAO (Screen Space Ambient Occlusion) system
+        SEASON3B::g_SSAOManager = new SEASON3B::SSAOManager();
+        if (SEASON3B::g_SSAOManager && SEASON3B::g_SSAOManager->Initialize())
+        {
+            g_ErrorReport.Write(L"> SSAO manager initialized.\r\n");
+        }
+        else
+        {
+            g_ErrorReport.Write(L"> SSAO manager initialization failed.\r\n");
+        }
+
+        // Initialize tone mapping (HDR → LDR conversion)
+        if (ToneMapping::Initialize())
+        {
+            g_ErrorReport.Write(L"> Tone mapping initialized.\r\n");
+        }
+        else
+        {
+            g_ErrorReport.Write(L"> Tone mapping initialization failed.\r\n");
         }
 
         // Initialize the directional shadow map.

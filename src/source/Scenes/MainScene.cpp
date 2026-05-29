@@ -10,6 +10,7 @@
 #include "Engine/Object/ZzzObject.h"
 #include "Engine/Object/ZzzCharacter.h"
 #include "Render/Shaders/ShadowMap.h"
+#include "Render/Shaders/SSAOManager.h"
 #include "Render/Terrain/ZzzLodTerrain.h"
 #include "Engine/Object/ZzzInterface.h"
 #include "Render/Effects/ZzzEffect.h"
@@ -33,6 +34,7 @@
 #include "Camera/CameraManager.h"
 #include "Camera/CameraMode.h"
 #include "Render/PostProcess/Bloom.h"
+#include "Render/PostProcess/ToneMapping.h"
 #ifdef _EDITOR
 #include "Camera/FrustumRenderer.h"
 #include "Camera/CameraDebugLog.h"
@@ -583,6 +585,41 @@ bool RenderMainScene()
         return false;
     }
 
+    // Tone Mapping preset switching
+    // - Arrow Left/Right: cycle through all 20 presets
+    // - Number Keys 0-9: jump directly to presets 0-9
+    // - Shift+Arrow: cycle faster
+    static bool lastKeyState[256] = {false};
+
+    if ((GetAsyncKeyState(VK_LEFT) & 0x8000) && !lastKeyState[VK_LEFT])
+    {
+        ToneMapping::CyclePreset(-1);
+        lastKeyState[VK_LEFT] = true;
+    }
+    else if (!(GetAsyncKeyState(VK_LEFT) & 0x8000))
+        lastKeyState[VK_LEFT] = false;
+
+    if ((GetAsyncKeyState(VK_RIGHT) & 0x8000) && !lastKeyState[VK_RIGHT])
+    {
+        ToneMapping::CyclePreset(1);
+        lastKeyState[VK_RIGHT] = true;
+    }
+    else if (!(GetAsyncKeyState(VK_RIGHT) & 0x8000))
+        lastKeyState[VK_RIGHT] = false;
+
+    for (int key = '0'; key <= '9'; ++key)
+    {
+        if ((GetAsyncKeyState(key) & 0x8000) && !lastKeyState[key])
+        {
+            int preset = key - '0';
+            while (ToneMapping::GetCurrentPreset() != preset)
+                ToneMapping::CyclePreset(1);
+            lastKeyState[key] = true;
+        }
+        else if (!(GetAsyncKeyState(key) & 0x8000))
+            lastKeyState[key] = false;
+    }
+
     // Per-camera fog default: Orbital uses fog (noticeable at longer view distances),
     // Default camera's fog zone sits at/beyond its far clip and reads as visual noise,
     // so fog is off by default for Default. DevEditor can override either below.
@@ -626,10 +663,42 @@ bool RenderMainScene()
     // before the 2-D UI draws on top.  BeginCapture() is a no-op when bloom is
     // disabled or the GPU doesn't support the required extensions.
     Bloom::BeginCapture();
+
+    // Begin SSAO G-Buffer capture (optional: currently shares depth with Bloom)
+    // This prepares the SSAO system to capture depth/position during rendering.
+    if (SEASON3B::g_SSAOManager && SEASON3B::g_SSAOManager->IsEnabled())
+    {
+        SEASON3B::g_SSAOManager->BeginGBufferCapture(width, height);
+    }
+
     SetupMainSceneViewport(width, height, byWaterMap, cameraPos);
     RenderGameWorld(byWaterMap, width, height);
+
+    // End SSAO G-Buffer capture
+    if (SEASON3B::g_SSAOManager && SEASON3B::g_SSAOManager->IsEnabled())
+    {
+        SEASON3B::g_SSAOManager->EndGBufferCapture();
+    }
+
     // Threshold → blur → composite the glow layer onto the default framebuffer.
     Bloom::ApplyBloom();
+
+    // Apply SSAO (Screen Space Ambient Occlusion) post-processing
+    // SSAO darkens crevices and creases for increased visual depth.
+    // This runs after Bloom to modulate the lit scene by ambient occlusion.
+    if (SEASON3B::g_SSAOManager && SEASON3B::g_SSAOManager->IsEnabled())
+    {
+        unsigned int sceneColorTex = Bloom::GetSceneColorTexture();
+        if (sceneColorTex != 0)
+        {
+            SEASON3B::g_SSAOManager->ApplySSAO(sceneColorTex);
+        }
+    }
+
+    // Apply tone mapping (HDR → LDR conversion)
+    // When Bloom is on, uses Bloom's scene texture. When off, gracefully skips (tone mapping checks for valid texture).
+    unsigned int sceneColorTex = Bloom::IsEnabled() ? Bloom::GetSceneColorTexture() : 0;
+    ToneMapping::Apply(sceneColorTex);
 
 #ifdef _EDITOR
     // Render spectated camera frustum wireframe when in FreeFly mode
