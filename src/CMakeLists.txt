@@ -202,6 +202,7 @@ target_include_directories(Main PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/source"
   "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/include"
   "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/netcore/includes"
+  "${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty"
   $<$<BOOL:${ENABLE_EDITOR}>:${CMAKE_CURRENT_SOURCE_DIR}/MuEditor>
 )
 
