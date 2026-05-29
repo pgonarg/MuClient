@@ -4,6 +4,9 @@
 #include "ZzzBMD.h"
 #include <cctype>
 #include <algorithm>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 // Helper: Convert wide string to lowercase
 static std::wstring ToLower(const wchar_t* str) {
@@ -20,16 +23,65 @@ static std::wstring GetExtension(const wchar_t* filePath) {
     return ToLower(path.substr(dotPos).c_str());
 }
 
+// Helper: Get base name without extension
+static std::wstring GetBaseName(const wchar_t* filePath) {
+    std::wstring path(filePath);
+    size_t lastSlash = path.find_last_of(L"\\/");
+    std::wstring filename = (lastSlash == std::wstring::npos) ? path : path.substr(lastSlash + 1);
+    size_t dotPos = filename.find_last_of(L'.');
+    if (dotPos == std::wstring::npos) return filename;
+    return filename.substr(0, dotPos);
+}
+
+// Helper: Check if file exists
+static bool FileExists(const wchar_t* filePath) {
+    try {
+        return fs::exists(filePath);
+    } catch (...) {
+        return false;
+    }
+}
+
 std::unique_ptr<Model> ModelLoader::Load(const wchar_t* filePath) {
+    if (!filePath) return nullptr;
+
     std::wstring ext = GetExtension(filePath);
 
+    // For glTF files, load directly
     if (ext == L".glb" || ext == L".gltf") {
         return LoadAsGltf(filePath);
-    } else if (ext == L".bmd") {
+    }
+
+    // For BMD files, check for glTF version first (converted/edited assets)
+    if (ext == L".bmd") {
+        // Extract base name (e.g., "character" from "character.bmd")
+        std::wstring baseName = GetBaseName(filePath);
+
+        // Check for glTF version in Models_gltf/ folder
+        // Try .glb first (single file), then .gltf (with .bin)
+        std::wstring gltfPath_glb = L"Data/Models_gltf/" + baseName + L".glb";
+        std::wstring gltfPath_gltf = L"Data/Models_gltf/" + baseName + L".gltf";
+
+        if (FileExists(gltfPath_glb.c_str())) {
+            // Found converted glTF version - load it instead of BMD
+            auto model = LoadAsGltf(gltfPath_glb.c_str());
+            if (model) {
+                // Successfully loaded glTF (modified asset)
+                return model;
+            }
+        } else if (FileExists(gltfPath_gltf.c_str())) {
+            // Found separate .gltf + .bin version
+            auto model = LoadAsGltf(gltfPath_gltf.c_str());
+            if (model) {
+                return model;
+            }
+        }
+
+        // No glTF version found, load original BMD
         return LoadAsBmd(filePath);
     }
 
-    // Default: try glTF first, then BMD
+    // Unknown extension: try glTF first, then BMD
     auto gltfModel = gltf::GltfLoader::Load(filePath);
     if (gltfModel) {
         return std::make_unique<GltfModelWrapper>(std::move(gltfModel));
