@@ -77,7 +77,8 @@ Open your `Data/` folder, pick a world, **Load world**. It:
 - places every object from `EncTerrain{N}.obj` as `Object{N}/Object{Type+1}.glb`
   at its real position/angle/scale (missing models show as red placeholders);
 - lets you select (click/list), move/rotate/scale (gizmo, W/E/R), add, duplicate
-  (Ctrl+D), delete (Del);
+  (Ctrl+D), delete (Del), and change an object's model via the inspector dropdown
+  (or scrub the Type # to preview models live);
 - **exports** a re-encrypted `EncTerrain{N}.obj` (download) to drop into the world
   folder manually.
 

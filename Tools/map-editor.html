@@ -107,9 +107,10 @@
   <div id="insp">
     <div id="noSel" style="color:var(--muted)">No selection.<br><br>Click an object in the viewport or list.</div>
     <div id="sel" style="display:none">
-      <label>Type (model)</label>
+      <label>Model</label>
+      <select id="iModelSel" style="width:100%"></select>
+      <label>Type # (scrub to preview)</label>
       <input id="iType" type="number" step="1" min="0" />
-      <div id="iModel" class="pill" style="margin-top:4px"></div>
       <label>Position (MU x / y / z)</label>
       <div class="row3"><input id="px" type="number" step="1"><input id="py" type="number" step="1"><input id="pz" type="number" step="1"></div>
       <label>Angle (deg x / y / z)</label>
@@ -202,6 +203,7 @@ let worldNum = null, worldDir = '', objectDir = '';
 let terrainMesh = null;
 let objects = [];          // [{type, pos:[3], ang:[3], scale, node}]
 let selected = null;
+let availableModels = [];   // sorted list of object Types that have a GLB in objectDir
 const glbCache = new Map();// type -> Promise<THREE.Group template>
 const loader = new GLTFLoader();
 
@@ -433,6 +435,7 @@ async function loadWorld(n){
   worldNum=n; const w=worldsAvail.find(w=>w.n===n); worldDir=w.worldDir;
   const parent = worldDir.lastIndexOf('/')>=0 ? worldDir.slice(0,worldDir.lastIndexOf('/')) : '';
   objectDir = (parent?parent+'/':'') + `Object${n}`;   // Data/Object{N}, sibling of World{N}
+  populateModelList();
   $('#hint').style.display='none';
   status(`Loading World ${n}…`);
   // clear previous
@@ -474,6 +477,33 @@ async function loadWorld(n){
   controls.update();
 }
 
+// ---------- model picker --------------------------------------------------
+function populateModelList(){
+  availableModels = [];
+  const prefix = (objectDir+'/').toLowerCase();
+  for(const p of files.keys()){
+    if(!p.startsWith(prefix)) continue;
+    const m = p.match(/object(\d+)\.glb$/);     // ObjectNN.glb -> type NN-1
+    if(m) availableModels.push(+m[1]-1);
+  }
+  availableModels = [...new Set(availableModels)].sort((a,b)=>a-b);
+  const sel = $('#iModelSel'); sel.innerHTML='';
+  for(const t of availableModels){
+    const op = document.createElement('option');
+    op.value = t; op.textContent = `${objModelName(t)}  (type ${t})`;
+    sel.appendChild(op);
+  }
+}
+
+async function changeType(t){
+  if(!selected || !Number.isFinite(t)) return;
+  const o = selected; o.type = t;
+  world.remove(o.node);
+  await addObjectNode(o);
+  gizmo.attach(o.node);
+  refreshInspector(); rebuildList();
+}
+
 // ---------- selection / inspector ----------------------------------------
 function select(o){
   selected=o;
@@ -484,7 +514,16 @@ function select(o){
 }
 function refreshInspector(){
   if(!selected) return; const o=selected;
-  $('#iType').value=o.type; $('#iModel').textContent=objModelName(o.type);
+  $('#iType').value=o.type;
+  const sel=$('#iModelSel');
+  // ensure the current type is selectable even if its GLB is missing in objectDir
+  if(![...sel.options].some(op=>+op.value===o.type)){
+    const op=document.createElement('option');
+    op.value=o.type; op.textContent=`${objModelName(o.type)}  (type ${o.type}, missing)`;
+    sel.appendChild(op);
+    [...sel.options].sort((a,b)=>+a.value-+b.value).forEach(op=>sel.appendChild(op));
+  }
+  sel.value=o.type;
   $('#px').value=Math.round(o.pos[0]); $('#py').value=Math.round(o.pos[1]); $('#pz').value=Math.round(o.pos[2]);
   $('#ax').value=Math.round(o.ang[0]); $('#ay').value=Math.round(o.ang[1]); $('#az').value=Math.round(o.ang[2]);
   $('#sc').value=+o.scale.toFixed(3);
@@ -497,10 +536,8 @@ function applyInspector(){
   n.position.set(...o.pos); n.quaternion.copy(angleQuat(...o.ang)); n.scale.setScalar(o.scale);
 }
 ['px','py','pz','ax','ay','az','sc'].forEach(id=> $('#'+id).addEventListener('change', applyInspector));
-$('#iType').addEventListener('change', async()=>{
-  if(!selected) return; const o=selected; o.type=+$('#iType').value;
-  world.remove(o.node); await addObjectNode(o); gizmo.attach(o.node); refreshInspector(); rebuildList();
-});
+$('#iType').addEventListener('change', ()=> changeType(+$('#iType').value));
+$('#iModelSel').addEventListener('change', ()=> changeType(+$('#iModelSel').value));
 
 // ---------- object list ---------------------------------------------------
 function rebuildList(){
