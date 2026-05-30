@@ -52,6 +52,22 @@
   kbd { background:var(--panel2); border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
   .pill { font-size:11px; padding:2px 7px; border-radius:10px; background:var(--panel2); color:var(--muted); }
   code { color:#cbd5e1; }
+  #lib { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none;
+         align-items:center; justify-content:center; z-index:50; }
+  #lib.on { display:flex; }
+  #libBox { width:560px; max-height:74vh; background:var(--panel); border:1px solid var(--line);
+            border-radius:10px; display:flex; flex-direction:column; overflow:hidden; }
+  #libHead { display:flex; gap:10px; align-items:center; padding:12px 14px; border-bottom:1px solid var(--line); }
+  #libHead b { flex:1; }
+  #libHead input { background:var(--panel2); border:1px solid var(--line); color:var(--text);
+                   border-radius:6px; padding:6px 9px; width:220px; }
+  #libHint { padding:8px 14px; color:var(--muted); font-size:11px; border-bottom:1px solid var(--line); }
+  #libList { overflow:auto; }
+  #libList .li { padding:6px 14px; cursor:pointer; display:flex; gap:10px; }
+  #libList .li:hover { background:var(--accent2); }
+  #libList .li .f { color:var(--accent); width:90px; }
+  #libList .gh { padding:6px 14px; color:var(--muted); font-size:11px; text-transform:uppercase;
+                 letter-spacing:.4px; position:sticky; top:0; background:var(--panel); }
 </style>
 <script type="importmap">
 { "imports": {
@@ -71,6 +87,7 @@
     <span class="pill" id="objCount">no world</span>
     <span class="spacer"></span>
     <button id="add" class="ghost" disabled title="Add object at view center">+ Object</button>
+    <button id="import" class="ghost" disabled title="Import a model from any Object folder">Import…</button>
     <button id="dup" class="ghost" disabled title="Duplicate (Ctrl+D)">Duplicate</button>
     <button id="del" class="ghost" disabled title="Delete (Del)">Delete</button>
     <button id="save" disabled title="Export EncTerrainN.obj">Export .obj</button>
@@ -104,6 +121,19 @@
     </div>
   </div>
 
+  <div id="lib">
+    <div id="libBox">
+      <div id="libHead">
+        <b>Import model from any Object folder</b>
+        <input id="libSearch" type="search" placeholder="Filter (e.g. Object2, 16)…" />
+        <button id="libClose" class="ghost">✕</button>
+      </div>
+      <div id="libHint">Picks from another folder are assigned a free slot in the current world;
+        Export then lists the BMD to copy into this world's Object folder.</div>
+      <div id="libList"></div>
+    </div>
+  </div>
+
   <div id="insp">
     <div id="noSel" style="color:var(--muted)">No selection.<br><br>Click an object in the viewport or list.</div>
     <div id="sel" style="display:none">
@@ -130,6 +160,7 @@ import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 
 const $ = s => document.querySelector(s);
 const TERRAIN_SIZE = 256, TERRAIN_SCALE = 100, DEG = Math.PI/180;
+const MAX_WORLD_OBJECTS = 160;   // engine slot limit (Object1..Object160 per world)
 
 // ---------- MU map cipher (port of MapFileDecrypt/Encrypt) ----------------
 const MAP_XOR = [0xD1,0x73,0x52,0xF6,0xD2,0x9A,0xCB,0x27,0x3E,0xAF,0x59,0x31,0x37,0xB3,0xE7,0xA2];
@@ -204,6 +235,11 @@ let terrainMesh = null;
 let objects = [];          // [{type, pos:[3], ang:[3], scale, node}]
 let selected = null;
 let availableModels = [];   // sorted list of object Types that have a GLB in objectDir
+// Imported (cross-folder) models: target Type -> {dir, fileNum, glbPath, srcLabel}.
+// These reference a model from another Object folder, assigned to a free slot in
+// the current world; on export we emit a copy list so the BMD lands in this world.
+let importMap = new Map();
+let modelLibrary = null;    // lazily built list of every Object*/ObjectNN.glb
 const glbCache = new Map();// type -> Promise<THREE.Group template>
 const loader = new GLTFLoader();
 
@@ -369,14 +405,19 @@ loader.manager.setURLModifier(url=>{
   return url;
 });
 
+function modelSource(type){
+  const imp = importMap.get(type);
+  if(imp) return { dir: imp.dir, path: imp.glbPath };       // cross-folder import
+  return { dir: objectDir, path: `${objectDir}/${objModelName(type)}` };
+}
 function loadTemplate(type){
   if(glbCache.has(type)) return glbCache.get(type);
-  const path = `${objectDir}/${objModelName(type)}`;
+  const src = modelSource(type);
   const p = (async()=>{
-    const buf = await fileBuf(path);
+    const buf = await fileBuf(src.path);
     if(!buf) return null;
     return await new Promise((res)=> loader.parse(buf.buffer.slice(buf.byteOffset,buf.byteOffset+buf.byteLength),
-      objectDir+'/', g=> res(g.scene), ()=> res(null)));
+      src.dir+'/', g=> res(g.scene), ()=> res(null)));
   })();
   glbCache.set(type, p); return p;
 }
@@ -440,7 +481,7 @@ async function loadWorld(n){
   status(`Loading World ${n}…`);
   // clear previous
   for(const o of objects) if(o.node) world.remove(o.node);
-  objects=[]; glbCache.clear(); select(null);
+  objects=[]; glbCache.clear(); importMap.clear(); select(null);
 
   const H = await buildTerrain();
 
@@ -462,7 +503,7 @@ async function loadWorld(n){
   rebuildList();
   const missing = objects.filter(o=>o.missing).length, ok = objects.length-missing;
   $('#objCount').textContent = `World ${n}: ${objects.length} objects`;
-  ['#add','#save'].forEach(s=>$(s).disabled=false);
+  ['#add','#save','#import'].forEach(s=>$(s).disabled=false);
   const warn = missing? ` — ⚠ ${missing} missing model(s) from ${objectDir}/ (shown as red boxes)` : '';
   status(`World ${n}: ${ok} models loaded, ${missing} placeholders.${warn}`);
   // frame the actual terrain (world-space bbox; accounts for the -90X world group).
@@ -495,6 +536,48 @@ function populateModelList(){
   }
 }
 
+function buildLibrary(){
+  if(modelLibrary) return modelLibrary;
+  modelLibrary = [];
+  for(const p of files.keys()){
+    const m = p.match(/(^|\/)object(\d+)\/object(\d+)\.glb$/i);  // ObjectM/ObjectK.glb
+    if(m) modelLibrary.push({ folder:`Object${+m[2]}`, folderNum:+m[2], fileNum:+m[3],
+                              type:+m[3]-1, glbPath:p, dir:p.slice(0,p.lastIndexOf('/')) });
+  }
+  modelLibrary.sort((a,b)=> a.folderNum-b.folderNum || a.fileNum-b.fileNum);
+  return modelLibrary;
+}
+
+function freeSlot(){
+  const used = new Set(availableModels);
+  for(const t of importMap.keys()) used.add(t);
+  for(let t=0;t<MAX_WORLD_OBJECTS;t++) if(!used.has(t)) return t;
+  return -1;
+}
+
+function placePos(){  // current view target -> MU coords (inverse of -90X world group)
+  const t = controls.target.clone().applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI/2));
+  return [Math.round(t.x), Math.round(t.y), Math.round(t.z)];
+}
+
+async function importModel(entry){
+  let type;
+  if(entry.dir.toLowerCase() === objectDir.toLowerCase()){
+    type = entry.type;                       // same world -> native model, no slot needed
+  } else {
+    type = freeSlot();
+    if(type<0){ status('No free model slots (160 max) in this world.'); return; }
+    importMap.set(type, { dir:entry.dir, fileNum:entry.fileNum, glbPath:entry.glbPath,
+                          srcLabel:`${entry.folder}/Object${entry.fileNum}` });
+    glbCache.delete(type);
+  }
+  const o = { type, pos:placePos(), ang:[0,0,0], scale:1 };
+  objects.push(o); await addObjectNode(o); rebuildList(); select(o);
+  status(entry.dir.toLowerCase()===objectDir.toLowerCase()
+    ? `Added ${objModelName(type)}.`
+    : `Imported ${entry.folder}/Object${entry.fileNum} as type ${type} — Export will include a copy list.`);
+}
+
 async function changeType(t){
   if(!selected || !Number.isFinite(t)) return;
   const o = selected; o.type = t;
@@ -518,8 +601,10 @@ function refreshInspector(){
   const sel=$('#iModelSel');
   // ensure the current type is selectable even if its GLB is missing in objectDir
   if(![...sel.options].some(op=>+op.value===o.type)){
-    const op=document.createElement('option');
-    op.value=o.type; op.textContent=`${objModelName(o.type)}  (type ${o.type}, missing)`;
+    const op=document.createElement('option'); op.value=o.type;
+    const imp=importMap.get(o.type);
+    op.textContent = imp ? `${imp.srcLabel} → slot ${o.type} (imported)`
+                         : `${objModelName(o.type)}  (type ${o.type}, missing)`;
     sel.appendChild(op);
     [...sel.options].sort((a,b)=>+a.value-+b.value).forEach(op=>sel.appendChild(op));
   }
@@ -599,8 +684,54 @@ $('#save').onclick=()=>{
   const blob=new Blob([enc],{type:'application/octet-stream'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download=`EncTerrain${worldNum}.obj`; a.click(); URL.revokeObjectURL(a.href);
-  status(`Exported EncTerrain${worldNum}.obj (${objects.length} objects). Drop it into World${worldNum}/.`);
+
+  // Imported (cross-folder) models: emit a copy list so they exist in this world.
+  if(importMap.size){
+    const lines=[
+      `# World ${worldNum} — imported models from other Object folders.`,
+      `# The .obj references them by slot number; copy each BMD (and its textures)`,
+      `# into this world's Object${worldNum}\\ folder so the game can load them.`, ``];
+    for(const [t,imp] of [...importMap].sort((x,y)=>x[0]-y[0])){
+      const dest=objModelName(t).replace(/\.glb$/i,'.bmd');   // Object{t+1}.bmd
+      lines.push(`slot ${t}:  copy  Data\\${imp.srcLabel}.bmd  ->  Data\\Object${worldNum}\\${dest}`);
+      lines.push(`           + copy that model's OZJ/OZT textures from ${imp.srcLabel.split('/')[0]}\\ too`);
+    }
+    const mb=new Blob([lines.join('\r\n')],{type:'text/plain'});
+    const a2=document.createElement('a'); a2.href=URL.createObjectURL(mb);
+    a2.download=`World${worldNum}_imports.txt`; a2.click(); URL.revokeObjectURL(a2.href);
+  }
+  status(`Exported EncTerrain${worldNum}.obj (${objects.length} objects).` +
+    (importMap.size?` + ${importMap.size} import(s): see World${worldNum}_imports.txt for files to copy.`:''));
 };
+
+// ---------- import-from-any-folder modal ----------------------------------
+function openLib(){ buildLibrary(); $('#libSearch').value=''; renderLib(); $('#lib').classList.add('on'); $('#libSearch').focus(); }
+function closeLib(){ $('#lib').classList.remove('on'); }
+function renderLib(){
+  const q=$('#libSearch').value.trim().toLowerCase();
+  const all=buildLibrary().filter(e=> !q ||
+    `${e.folder} object${e.fileNum}`.toLowerCase().includes(q) || (''+e.fileNum)===q);
+  const lib=all.slice(0,400);
+  const el=$('#libList'); el.innerHTML=''; const frag=document.createDocumentFragment();
+  let lastFolder=null;
+  for(const e of lib){
+    if(e.folder!==lastFolder){ lastFolder=e.folder; const h=document.createElement('div'); h.className='gh';
+      h.textContent=e.folder + (e.folderNum===worldNum?'  (this world)':''); frag.appendChild(h); }
+    const d=document.createElement('div'); d.className='li';
+    d.innerHTML=`<span class="f">${e.folder}</span><span>Object${e.fileNum}.glb</span>`+
+                `<span style="color:#9aa0ad">type ${e.type}</span>`;
+    d.onclick=()=>{ closeLib(); importModel(e); };
+    frag.appendChild(d);
+  }
+  if(!lib.length){ const d=document.createElement('div'); d.className='li'; d.textContent='No matches.'; frag.appendChild(d); }
+  else if(all.length>lib.length){ const d=document.createElement('div'); d.className='gh';
+    d.textContent=`…${all.length-lib.length} more — type to filter`; frag.appendChild(d); }
+  el.appendChild(frag);
+}
+$('#import').onclick=openLib;
+$('#libClose').onclick=closeLib;
+$('#libSearch').addEventListener('input', renderLib);
+$('#lib').addEventListener('click', e=>{ if(e.target.id==='lib') closeLib(); });
 
 // ---------- gizmo modes / toggles / keys ----------------------------------
 function setMode(m){ gizmo.setMode(m);

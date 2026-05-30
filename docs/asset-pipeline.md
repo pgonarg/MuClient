@@ -79,8 +79,13 @@ Open your `Data/` folder, pick a world, **Load world**. It:
 - lets you select (click/list), move/rotate/scale (gizmo, W/E/R), add, duplicate
   (Ctrl+D), delete (Del), and change an object's model via the inspector dropdown
   (or scrub the Type # to preview models live);
+- **imports** a model from any other `Object{M}/` folder (Import… button): it's
+  assigned a free slot (`Type < 160`) in the current world and previewed live.
 - **exports** a re-encrypted `EncTerrain{N}.obj` (download) to drop into the world
-  folder manually.
+  folder manually. If any cross-folder imports were used, it also downloads a
+  `World{N}_imports.txt` copy-list (the `.obj` references models by slot index
+  against the world's own `Object{N}/`, so each imported BMD + its textures must be
+  copied there at the assigned slot for the game to load it).
 
 World/Object data formats (all use the MU map cipher; ports live in
 `map-editor.html`):
