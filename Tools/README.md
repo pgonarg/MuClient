@@ -18,6 +18,13 @@ Python 3.12 and Pillow (`python -m pip install Pillow`).
   `.bmd.orig` before overwriting)
 - `mu_formats/` — shared library (cipher, BMD parse+write, GLB read+write, texture codecs)
 
+### Viewer
+
+- **`gltf-explorer.html`** — open in a browser, click **Open folder…** and pick
+  `Data/` (or a subfolder). Lists every `.glb` in a searchable sidebar and renders
+  the selected model in 3D with its textures (Three.js). Drag to orbit, scroll to
+  zoom, ↑/↓ to step through. Needs internet (Three.js via CDN).
+
 Full reference (formats, status, gotchas, how-to):
 [`../docs/asset-pipeline.md`](../docs/asset-pipeline.md).
 

@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MU glTF Explorer</title>
+<style>
+  :root { --bg:#1e1f24; --panel:#26282f; --panel2:#2d2f37; --line:#3a3d47;
+          --text:#e6e7ea; --muted:#9aa0ad; --accent:#5aa9ff; --accent2:#2f6db0; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; font:13px/1.45 system-ui,Segoe UI,Roboto,sans-serif;
+              color:var(--text); background:var(--bg); overflow:hidden; }
+  #app { display:grid; grid-template-columns:320px 1fr; grid-template-rows:auto 1fr;
+         grid-template-areas:"head head" "side view"; height:100%; }
+  header { grid-area:head; display:flex; gap:12px; align-items:center; padding:10px 14px;
+           background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1 { font-size:14px; margin:0; font-weight:600; letter-spacing:.2px; }
+  header .spacer { flex:1; }
+  button, label.btn { background:var(--accent2); color:#fff; border:0; border-radius:6px;
+           padding:7px 12px; cursor:pointer; font-size:12px; }
+  button:hover, label.btn:hover { background:var(--accent); }
+  button.ghost { background:transparent; border:1px solid var(--line); color:var(--text); }
+  button.ghost.on { background:var(--accent2); border-color:var(--accent2); }
+  #search { background:var(--panel2); border:1px solid var(--line); color:var(--text);
+            border-radius:6px; padding:7px 10px; width:200px; }
+  #side { grid-area:side; background:var(--panel); border-right:1px solid var(--line);
+          overflow:auto; }
+  #count { padding:8px 12px; color:var(--muted); border-bottom:1px solid var(--line);
+           position:sticky; top:0; background:var(--panel); z-index:1; }
+  .group { padding:6px 12px 2px; color:var(--accent); font-weight:600; font-size:11px;
+           text-transform:uppercase; letter-spacing:.5px; position:sticky; top:33px;
+           background:var(--panel); }
+  .item { padding:5px 12px 5px 22px; cursor:pointer; color:var(--text);
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .item:hover { background:var(--panel2); }
+  .item.sel { background:var(--accent2); }
+  #view { grid-area:view; position:relative; }
+  #canvasWrap { position:absolute; inset:0; }
+  canvas { display:block; }
+  #info { position:absolute; left:12px; bottom:12px; max-width:46%;
+          background:rgba(20,21,26,.82); border:1px solid var(--line); border-radius:8px;
+          padding:10px 12px; backdrop-filter:blur(4px); pointer-events:none; }
+  #info .name { font-weight:600; margin-bottom:4px; word-break:break-all; }
+  #info .row { color:var(--muted); }
+  #info .row b { color:var(--text); font-weight:600; }
+  #toolbar { position:absolute; right:12px; top:12px; display:flex; gap:6px; }
+  #hint { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+          flex-direction:column; gap:14px; color:var(--muted); text-align:center; padding:20px; }
+  #hint h2 { color:var(--text); font-weight:600; }
+  #err { position:absolute; left:12px; top:12px; color:#ff8585; background:rgba(40,20,20,.85);
+         border:1px solid #5a3a3a; border-radius:6px; padding:6px 10px; display:none; max-width:50%; }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-radius:4px;
+        padding:1px 5px; font-size:11px; }
+  a { color:var(--accent); }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>MU glTF Explorer</h1>
+    <label class="btn">Open folder…
+      <input id="dir" type="file" webkitdirectory directory multiple hidden />
+    </label>
+    <input id="search" type="search" placeholder="Filter models…" />
+    <span class="spacer"></span>
+    <button id="prev" class="ghost" title="Previous (↑)">◀</button>
+    <button id="next" class="ghost" title="Next (↓)">▶</button>
+  </header>
+  <div id="side"><div id="count">Open a folder (e.g. <b>Data/</b>) to list models.</div></div>
+  <div id="view">
+    <div id="canvasWrap"></div>
+    <div id="err"></div>
+    <div id="toolbar">
+      <button id="bGrid" class="ghost on" title="Toggle grid">Grid</button>
+      <button id="bWire" class="ghost" title="Toggle wireframe">Wire</button>
+      <button id="bSpin" class="ghost" title="Auto-rotate">Spin</button>
+      <button id="bReset" class="ghost" title="Reset view">Reset</button>
+    </div>
+    <div id="info" style="display:none">
+      <div class="name" id="iName"></div>
+      <div class="row" id="iPath"></div>
+      <div class="row" id="iStats"></div>
+      <div class="row" id="iTex"></div>
+    </div>
+    <div id="hint">
+      <h2>MU glTF Explorer</h2>
+      <div>Click <b>Open folder…</b> and choose <b>Data/</b> (or any subfolder).<br>
+        Every <code>.glb</code> is listed on the left. Click one to view it in 3D.<br>
+        Textures (sibling <code>.png</code>) load automatically.</div>
+      <div>Drag to orbit · scroll to zoom · <kbd>↑</kbd>/<kbd>↓</kbd> to step through models.</div>
+      <div style="color:#6b7280">Needs internet (Three.js via CDN). Chrome/Edge/Firefox.</div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const $ = s => document.querySelector(s);
+const sideEl = $('#side'), countEl = $('#count'), errEl = $('#err');
+
+// ---- file index ----------------------------------------------------------
+let fileByPath = new Map();   // lowercased webkitRelativePath -> File
+let blobCache  = new Map();   // path -> objectURL
+let glbList = [];             // [{path, name, dir, file}]
+let current = -1;
+
+function indexFiles(files) {
+  fileByPath = new Map(); glbList = [];
+  for (const f of files) {
+    const rel = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
+    fileByPath.set(rel.toLowerCase(), f);
+    if (/\.glb$/i.test(rel)) {
+      const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '';
+      glbList.push({ path: rel, name: rel.slice(rel.lastIndexOf('/') + 1), dir, file: f });
+    }
+  }
+  glbList.sort((a, b) => a.path.localeCompare(b.path));
+  renderList();
+}
+
+function renderList() {
+  const q = $('#search').value.trim().toLowerCase();
+  const items = glbList.filter(g => !q || g.path.toLowerCase().includes(q));
+  countEl.innerHTML = `<b>${items.length}</b> model${items.length !== 1 ? 's' : ''}` +
+                      (q ? ` (of ${glbList.length})` : '') ;
+  const frag = document.createDocumentFragment();
+  let lastDir = null;
+  items.forEach(g => {
+    if (g.dir !== lastDir) {
+      lastDir = g.dir;
+      const h = document.createElement('div');
+      h.className = 'group'; h.textContent = g.dir || '(root)';
+      frag.appendChild(h);
+    }
+    const el = document.createElement('div');
+    el.className = 'item'; el.textContent = g.name; el.title = g.path;
+    el.dataset.path = g.path;
+    el.onclick = () => selectByPath(g.path);
+    frag.appendChild(el);
+  });
+  // reset then append
+  while (sideEl.children.length > 1) sideEl.removeChild(sideEl.lastChild);
+  sideEl.appendChild(frag);
+  highlight();
+}
+
+function highlight() {
+  const cur = current >= 0 ? glbList[current]?.path : null;
+  sideEl.querySelectorAll('.item').forEach(el =>
+    el.classList.toggle('sel', el.dataset.path === cur));
+  const sel = sideEl.querySelector('.item.sel');
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+
+function blobURL(path) {
+  let u = blobCache.get(path);
+  if (!u) {
+    const f = fileByPath.get(path);
+    if (!f) return null;
+    u = URL.createObjectURL(f); blobCache.set(path, u);
+  }
+  return u;
+}
+
+// ---- three.js scene ------------------------------------------------------
+const wrap = $('#canvasWrap');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+wrap.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1e1f24);
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100000);
+camera.position.set(180, 160, 240);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x404050, 1.1));
+const dir = new THREE.DirectionalLight(0xffffff, 1.4);
+dir.position.set(1, 2, 1.5); scene.add(dir);
+const dirBack = new THREE.DirectionalLight(0xffffff, 0.5);
+dirBack.position.set(-1, 1, -1.5); scene.add(dirBack);
+
+const grid = new THREE.GridHelper(2000, 40, 0x444a55, 0x2c303a);
+scene.add(grid);
+const axes = new THREE.AxesHelper(60); scene.add(axes);
+
+let modelRoot = null, wireframe = false, autoSpin = false;
+
+const loader = new GLTFLoader();
+// Resolve external resources (textures) from the picked folder.
+loader.manager.setURLModifier(url => {
+  // url is the resolved relative path; try exact, then basename matches.
+  let key = decodeURIComponent(url).replace(/\\/g, '/').toLowerCase();
+  key = key.replace(/^\.\//, '');
+  if (fileByPath.has(key)) return blobURL(key);
+  const base = key.slice(key.lastIndexOf('/') + 1);
+  // same-dir match first
+  if (modelDir) {
+    const cand = (modelDir + '/' + base).toLowerCase();
+    if (fileByPath.has(cand)) return blobURL(cand);
+  }
+  // global basename fallback
+  for (const p of fileByPath.keys())
+    if (p.endsWith('/' + base) || p === base) return blobURL(p);
+  return url; // let it 404 (default material)
+});
+
+let modelDir = '';
+
+function clearModel() {
+  if (modelRoot) {
+    scene.remove(modelRoot);
+    modelRoot.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) (Array.isArray(o.material) ? o.material : [o.material])
+        .forEach(m => { for (const k in m) { if (m[k]?.isTexture) m[k].dispose(); } m.dispose(); });
+    });
+    modelRoot = null;
+  }
+}
+
+async function selectByPath(path) {
+  const idx = glbList.findIndex(g => g.path === path);
+  if (idx < 0) return;
+  current = idx; highlight();
+  const g = glbList[idx];
+  modelDir = g.dir;
+  errEl.style.display = 'none';
+  $('#hint').style.display = 'none';
+  try {
+    const buf = await g.file.arrayBuffer();
+    showInfo(g, buf);
+    clearModel();
+    loader.parse(buf, g.dir ? g.dir + '/' : '', gltf => {
+      modelRoot = gltf.scene;
+      applyWire();
+      scene.add(modelRoot);
+      frameObject(modelRoot);
+    }, err => showError('Render error: ' + (err?.message || err)));
+  } catch (e) { showError('Load error: ' + e.message); }
+}
+
+function frameObject(obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  if (box.isEmpty()) return;
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxd = Math.max(size.x, size.y, size.z) || 1;
+  controls.target.copy(center);
+  const dist = maxd * 1.8;
+  camera.position.copy(center).add(new THREE.Vector3(dist * 0.7, dist * 0.6, dist));
+  camera.near = maxd / 100; camera.far = maxd * 100; camera.updateProjectionMatrix();
+  grid.position.set(center.x, box.min.y, center.z);
+  controls.update();
+}
+
+function applyWire() {
+  if (!modelRoot) return;
+  modelRoot.traverse(o => {
+    if (o.material) (Array.isArray(o.material) ? o.material : [o.material])
+      .forEach(m => { m.wireframe = wireframe; });
+  });
+}
+
+function showInfo(g, buf) {
+  const meta = readGlbJson(buf);
+  $('#info').style.display = 'block';
+  $('#iName').textContent = g.name;
+  $('#iPath').textContent = g.path;
+  let verts = 0, tris = 0;
+  $('#iStats').innerHTML = '';
+  if (meta) {
+    const imgs = (meta.images || []).map(i => i.uri).filter(Boolean);
+    $('#iStats').innerHTML =
+      `<b>${(meta.meshes || []).length}</b> mesh · ` +
+      `<b>${(meta.materials || []).length}</b> material · ` +
+      `<b>${(meta.nodes || []).length}</b> nodes`;
+    $('#iTex').innerHTML = imgs.length
+      ? 'tex: ' + imgs.map(u => {
+          const ok = fileByPath.has(((g.dir ? g.dir + '/' : '') + u).toLowerCase());
+          return `<span style="color:${ok ? '#9aa0ad' : '#ff8585'}">${u}</span>`;
+        }).join(', ')
+      : '<span style="color:#9aa0ad">no textures</span>';
+  }
+}
+
+// Parse the JSON chunk of a GLB for quick metadata.
+function readGlbJson(buf) {
+  try {
+    const dv = new DataView(buf);
+    if (dv.getUint32(0, true) !== 0x46546C67) return null;
+    const jlen = dv.getUint32(12, true);
+    const json = new TextDecoder().decode(new Uint8Array(buf, 20, jlen));
+    return JSON.parse(json);
+  } catch { return null; }
+}
+
+function showError(msg) { errEl.textContent = msg; errEl.style.display = 'block'; }
+
+// ---- resize / render loop ------------------------------------------------
+function resize() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(wrap); resize();
+
+renderer.setAnimationLoop(() => {
+  if (autoSpin && modelRoot) modelRoot.rotation.y += 0.006;
+  controls.update();
+  renderer.render(scene, camera);
+});
+
+// ---- UI wiring -----------------------------------------------------------
+$('#dir').addEventListener('change', e => indexFiles(e.target.files));
+$('#search').addEventListener('input', renderList);
+$('#bGrid').onclick = e => { grid.visible = axes.visible = !grid.visible; e.target.classList.toggle('on', grid.visible); };
+$('#bWire').onclick = e => { wireframe = !wireframe; e.target.classList.toggle('on', wireframe); applyWire(); };
+$('#bSpin').onclick = e => { autoSpin = !autoSpin; e.target.classList.toggle('on', autoSpin); };
+$('#bReset').onclick = () => { if (modelRoot) frameObject(modelRoot); };
+$('#prev').onclick = () => step(-1);
+$('#next').onclick = () => step(1);
+function step(d) {
+  const visible = [...sideEl.querySelectorAll('.item')].map(el => el.dataset.path);
+  if (!visible.length) return;
+  let i = visible.indexOf(glbList[current]?.path);
+  i = (i + d + visible.length) % visible.length;
+  selectByPath(visible[i]);
+}
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); step(1); }
+  if (e.key === 'ArrowUp')   { e.preventDefault(); step(-1); }
+});
+
+// Drag-and-drop a folder onto the window (Chromium).
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', async e => {
+  e.preventDefault();
+  const items = [...e.dataTransfer.items].map(i => i.webkitGetAsEntry?.()).filter(Boolean);
+  if (!items.length) return;
+  const files = [];
+  async function walk(entry, prefix) {
+    if (entry.isFile) {
+      await new Promise(res => entry.file(f => {
+        Object.defineProperty(f, 'webkitRelativePath', { value: prefix + entry.name });
+        files.push(f); res();
+      }));
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      await new Promise(res => {
+        const read = () => reader.readEntries(async ents => {
+          if (!ents.length) return res();
+          for (const en of ents) await walk(en, prefix + entry.name + '/');
+          read();
+        });
+        read();
+      });
+    }
+  }
+  for (const it of items) await walk(it, '');
+  indexFiles(files);
+});
+</script>
+</body>
+</html>

@@ -56,7 +56,17 @@ tools/
   png_to_ozj.py          image -> OZJ            (drag-drop helper)
   Png-to-OZJ.bat         drag a PNG onto this to get a sibling .OZJ
   Glb-to-BMD.bat         drag a GLB onto this to get a sibling .BMD
+  gltf-explorer.html     in-browser 3D viewer/browser for the converted GLBs
 ```
+
+### Viewing converted models
+
+Open `tools/gltf-explorer.html` in a browser, click **Open folder…**, and pick
+`Data/` (or any subfolder). It lists every `.glb` in a searchable sidebar and
+renders the selected one in 3D (Three.js) with its sibling `.png` textures
+resolved from the chosen folder. Models appear upright thanks to the `MU_Orient`
+node. Useful for quickly seeing "what is what". (Loads Three.js from a CDN, so it
+needs internet; Chromium/Firefox.)
 
 ### Common commands
 
