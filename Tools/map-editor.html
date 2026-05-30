@@ -175,7 +175,31 @@ const TILE_FILES = ['TileGrass01','TileGrass02','TileGround01','TileGround02','T
   'TileRock06','TileRock07'];
 for(let i=1;i<=16;i++) TILE_FILES[13+i] = 'ExtTile'+(i<10?'0'+i:i);
 
-function objModelName(type){ const i=type+1; return (i<10?'Object0'+i:'Object'+i)+'.glb'; }
+// Lorencia (World 1, WorldActive==0) loads its objects by NAME at fixed type
+// indices (MapManager.cpp), not as ObjectNN. This is that Type->file table,
+// transcribed from the engine's AccessModel calls (suffix uses the same single
+// zero-pad rule: Tree1->Tree01, Tree10->Tree10).
+const LORENCIA_MODELS = (()=>{
+  const m={}, pad=n=>(n<10?'0'+n:''+n);
+  const range=(base,count,name)=>{ for(let i=0;i<count;i++) m[base+i]=name+pad(i+1); };
+  range(0,13,'Tree'); range(20,8,'Grass'); range(30,5,'Stone');
+  range(40,3,'StoneStatue'); m[43]='SteelStatue01'; range(44,3,'Tomb');
+  range(50,2,'FireLight'); m[52]='Bonfire01'; m[55]='DoungeonGate01';
+  range(56,2,'MerchantAnimal'); m[58]='TreasureDrum01'; m[59]='TreasureChest01'; m[60]='Ship01';
+  range(65,3,'SteelWall'); m[68]='SteelDoor01'; range(69,6,'StoneWall'); range(75,4,'StoneMuWall');
+  m[80]='Bridge01'; range(81,4,'Fence'); m[85]='BridgeStone01';
+  m[90]='StreetLight01'; range(91,3,'Cannon'); m[95]='Curtain01'; range(96,2,'Sign');
+  range(98,4,'Carriage'); range(102,2,'Straw'); m[105]='Waterspout01'; range(106,4,'Well');
+  m[110]='Hanging01'; m[111]='Stair01'; range(115,5,'House'); m[120]='Tent01';
+  range(121,6,'HouseWall'); range(127,3,'HouseEtc'); range(130,3,'Light'); m[133]='PoseBox01';
+  range(140,7,'Furniture'); m[150]='Candle01'; range(151,3,'Beer');
+  return m;
+})();
+
+function objModelName(type){
+  if(worldNum===1 && LORENCIA_MODELS[type]) return LORENCIA_MODELS[type]+'.glb';
+  const i=type+1; return (i<10?'Object0'+i:'Object'+i)+'.glb';
+}
 
 // ---------- file index ----------------------------------------------------
 let files = new Map();   // lowercased relpath -> File
@@ -522,10 +546,15 @@ async function loadWorld(n){
 function populateModelList(){
   availableModels = [];
   const prefix = (objectDir+'/').toLowerCase();
-  for(const p of files.keys()){
-    if(!p.startsWith(prefix)) continue;
-    const m = p.match(/object(\d+)\.glb$/);     // ObjectNN.glb -> type NN-1
-    if(m) availableModels.push(+m[1]-1);
+  if(worldNum===1){                              // Lorencia: named models by table
+    for(const t in LORENCIA_MODELS)
+      if(files.has(`${objectDir}/${LORENCIA_MODELS[t]}.glb`.toLowerCase())) availableModels.push(+t);
+  } else {
+    for(const p of files.keys()){
+      if(!p.startsWith(prefix)) continue;
+      const m = p.match(/object(\d+)\.glb$/);     // ObjectNN.glb -> type NN-1
+      if(m) availableModels.push(+m[1]-1);
+    }
   }
   availableModels = [...new Set(availableModels)].sort((a,b)=>a-b);
   const sel = $('#iModelSel'); sel.innerHTML='';
