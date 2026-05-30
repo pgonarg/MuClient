@@ -125,6 +125,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 
 const $ = s => document.querySelector(s);
 const TERRAIN_SIZE = 256, TERRAIN_SCALE = 100, DEG = Math.PI/180;
@@ -366,8 +367,11 @@ async function addObjectNode(o){
   node.quaternion.copy(angleQuat(o.ang[0], o.ang[1], o.ang[2]));
   node.scale.setScalar(o.scale);
   if(tmpl){
+    // SkeletonUtils.clone (NOT Object3D.clone): our GLBs are skinned, so each
+    // instance needs its own skeleton bound to its own bones. A SkinnedMesh is
+    // positioned by its bones, so the cloned bones must live under this node.
     const corr = new THREE.Group(); corr.rotation.x = Math.PI/2; // cancel MU_Orient (-90X)
-    corr.add(tmpl.clone(true)); node.add(corr); o.missing = false;
+    corr.add(skeletonClone(tmpl)); node.add(corr); o.missing = false;
   } else {
     const ph = new THREE.Mesh(new THREE.BoxGeometry(80,80,160),
       new THREE.MeshStandardMaterial({color:0xcc4444}));
