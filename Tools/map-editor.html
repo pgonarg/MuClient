@@ -214,10 +214,18 @@ function parseHeightImage(bytes){
   //  - TerrainHeight.OZB : 4-byte tag + BMP (base 4), 8-bit or 24-bit
   // height = value*1.5 for 8-bit / grayscale; packed R+G*256+B*65536 for true 24-bit.
   if(!bytes) return null;
-  let base = (bytes[0]===0x42 && bytes[1]===0x4D) ? 0
-           : (bytes[4]===0x42 && bytes[5]===0x4D) ? 4 : -1;
-  if(base<0) return null;
   const dv = new DataView(bytes.buffer, bytes.byteOffset);
+  // .bmp -> BMP at 0; .OZB -> 4-byte tag + BMP at 4. The OZB tag also starts with
+  // "BM", so validate the BITMAPINFOHEADER (biSize==40, width==256) to pick the
+  // real header instead of guessing — otherwise we parse garbage and heights blow up.
+  let base = -1;
+  for(const b of [0, 4]){
+    if(bytes[b]===0x42 && bytes[b+1]===0x4D &&
+       dv.getUint32(b+14, true)===40 && dv.getInt32(b+18, true)===TERRAIN_SIZE){
+      base = b; break;
+    }
+  }
+  if(base<0) return null;
   const dataOff = base + dv.getUint32(base+10, true);
   const w = dv.getInt32(base+18, true);
   const bpp = dv.getUint16(base+28, true);
