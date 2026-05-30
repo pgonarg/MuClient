@@ -255,13 +255,16 @@ async function buildTerrain(){
   const mapBytes = await fileBuf(`${worldDir}/EncTerrain${worldNum}.map`);
   if(mapBytes){ const d=mapDecrypt(mapBytes); L1=d.subarray(2,2+65536); L2=d.subarray(2+65536,2+2*65536); AL=d.subarray(2+2*65536,2+3*65536); }
 
-  const atlas = await buildTileAtlas();
+  const tiles = await buildTileArray();
+  const NT = TILE_FILES.length;
   const S=TERRAIN_SIZE, N=S-1;
   const pos=[], uv=[], l1=[], l2=[], al=[];
   const H_=(x,y)=>H[(Math.min(y,S-1))*S + Math.min(x,S-1)];
   for(let y=0;y<N;y++) for(let x=0;x<N;x++){
     const i=y*S+x;
-    const t1 = L1?L1[i]:0, t2 = L2?L2[i]:255, a = AL?AL[i]/255:0;
+    let t1 = L1?L1[i]:0, t2 = L2?L2[i]:255, a = AL?AL[i]/255:0;
+    if(t2>=NT){ t2=t1; a=0; }   // 255 = "no overlay" sentinel -> show layer1 only
+    if(t1>=NT) t1=0;
     // quad corners (MU coords)
     const X=x*TERRAIN_SCALE, Y=y*TERRAIN_SCALE, X1=(x+1)*TERRAIN_SCALE, Y1=(y+1)*TERRAIN_SCALE;
     const c=[[X,Y,H_(x,y)],[X1,Y,H_(x+1,y)],[X1,Y1,H_(x+1,y+1)],[X,Y1,H_(x,y+1)]];
@@ -279,31 +282,32 @@ async function buildTerrain(){
   g.setAttribute('aAlpha', new THREE.Float32BufferAttribute(al,1));
   g.computeVertexNormals();
 
-  const mat = new THREE.ShaderMaterial({
-    uniforms:{ uAtlas:{value:atlas.tex}, uCols:{value:atlas.cols}, uRows:{value:atlas.rows},
-               uRepeat:{value:1.0}, uLight:{value:new THREE.Vector3(0.5,0.8,0.4).normalize()} },
+  // sampler2DArray (WebGL2/GLSL3): one tile per array layer -> correct per-tile
+  // mipmaps, no atlas bleed. RawShaderMaterial so we control all decls explicitly.
+  const mat = new THREE.RawShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    uniforms:{ uTiles:{value:tiles.tex}, uRepeat:{value:1.0},
+               uLight:{value:new THREE.Vector3(0.4,0.85,0.3).normalize()} },
     vertexShader:`
-      attribute float aL1; attribute float aL2; attribute float aAlpha;
-      varying float vL1; varying float vL2; varying float vA; varying vec2 vUv; varying vec3 vN;
+      precision highp float;
+      uniform mat4 modelViewMatrix; uniform mat4 projectionMatrix; uniform mat3 normalMatrix;
+      in vec3 position; in vec3 normal; in vec2 uv;
+      in float aL1; in float aL2; in float aAlpha;
+      out float vL1; out float vL2; out float vA; out vec2 vUv; out vec3 vN;
       void main(){ vL1=aL1; vL2=aL2; vA=aAlpha; vUv=uv; vN=normalize(normalMatrix*normal);
         gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
     fragmentShader:`
-      precision highp float;
-      uniform sampler2D uAtlas; uniform float uCols; uniform float uRows;
-      uniform float uRepeat; uniform vec3 uLight;
-      varying float vL1; varying float vL2; varying float vA; varying vec2 vUv; varying vec3 vN;
-      vec4 tile(float idx, vec2 uv){
-        float col = mod(idx, uCols); float row = floor(idx/uCols);
-        vec2 f = fract(uv*uRepeat);
-        f = clamp(f, 0.01, 0.99);              // inset to avoid atlas bleed
-        vec2 a = (vec2(col,row)+f)/vec2(uCols,uRows);
-        return texture2D(uAtlas, a);
-      }
+      precision highp float; precision highp sampler2DArray;
+      uniform sampler2DArray uTiles; uniform float uRepeat; uniform vec3 uLight;
+      in float vL1; in float vL2; in float vA; in vec2 vUv; in vec3 vN;
+      out vec4 fragColor;
       void main(){
-        vec4 c1 = tile(vL1, vUv); vec4 c2 = tile(vL2, vUv);
-        vec3 col = mix(c1.rgb, c2.rgb, clamp(vA,0.0,1.0));
-        float d = max(dot(normalize(vN), normalize(uLight)), 0.0)*0.7 + 0.45;
-        gl_FragColor = vec4(col*d, 1.0);
+        vec2 uvw = fract(vUv*uRepeat);
+        vec3 c1 = texture(uTiles, vec3(uvw, vL1)).rgb;
+        vec3 c2 = texture(uTiles, vec3(uvw, vL2)).rgb;
+        vec3 col = mix(c1, c2, clamp(vA,0.0,1.0));
+        float d = max(dot(normalize(vN), normalize(uLight)), 0.0)*0.55 + 0.55;
+        fragColor = vec4(col*d, 1.0);
       }`
   });
   terrainMesh = new THREE.Mesh(g, mat);
@@ -322,21 +326,34 @@ function tilePngBlob(name){
   return null;
 }
 
-async function buildTileAtlas(){
-  const cols = 8, cell = 128, rows = Math.ceil(TILE_FILES.length/cols);
-  const cvs = document.createElement('canvas'); cvs.width=cols*cell; cvs.height=rows*cell;
-  const ctx = cvs.getContext('2d'); ctx.fillStyle='#556644'; ctx.fillRect(0,0,cvs.width,cvs.height);
+async function buildTileArray(){
+  // One DataArrayTexture layer per tile (each tile resized to CELL x CELL).
+  const CELL = 128, N = TILE_FILES.length;
+  const data = new Uint8Array(CELL*CELL*4*N);
+  const cvs = document.createElement('canvas'); cvs.width=cvs.height=CELL;
+  const ctx = cvs.getContext('2d', {willReadFrequently:true});
   await Promise.all(TILE_FILES.map((name,idx)=> new Promise(res=>{
     const url = tilePngBlob(name);
-    if(!url){ res(); return; }
+    if(!url){ // missing tile -> neutral gray fill
+      const off=idx*CELL*CELL*4; for(let p=0;p<CELL*CELL*4;p+=4){ data[off+p]=data[off+p+1]=data[off+p+2]=110; data[off+p+3]=255; }
+      res(); return;
+    }
     const img = new Image();
-    img.onload=()=>{ ctx.drawImage(img,(idx%cols)*cell,Math.floor(idx/cols)*cell,cell,cell); URL.revokeObjectURL(url); res(); };
+    img.onload=()=>{
+      ctx.clearRect(0,0,CELL,CELL); ctx.drawImage(img,0,0,CELL,CELL);
+      data.set(ctx.getImageData(0,0,CELL,CELL).data, idx*CELL*CELL*4);
+      URL.revokeObjectURL(url); res();
+    };
     img.onerror=()=>{ URL.revokeObjectURL(url); res(); };
     img.src=url;
   })));
-  const tex = new THREE.CanvasTexture(cvs); tex.colorSpace=THREE.SRGBColorSpace;
-  tex.minFilter=THREE.LinearMipmapLinearFilter; tex.magFilter=THREE.LinearFilter; tex.needsUpdate=true;
-  return {tex, cols, rows};
+  const tex = new THREE.DataArrayTexture(data, CELL, CELL, N);
+  tex.format = THREE.RGBAFormat; tex.type = THREE.UnsignedByteType;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true; tex.needsUpdate = true;
+  return {tex};
 }
 
 // ---------- objects -------------------------------------------------------
