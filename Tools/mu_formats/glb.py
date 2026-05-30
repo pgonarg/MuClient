@@ -24,6 +24,76 @@ UNSIGNED_BYTE = 5121
 ARRAY_BUFFER = 34962
 ELEMENT_ARRAY_BUFFER = 34963
 
+# Accessor type -> component count
+_TYPE_COUNT = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4,
+               "MAT4": 16}
+# Component type -> (struct char, byte size)
+_COMP = {FLOAT: ("f", 4), UNSIGNED_INT: ("I", 4),
+         UNSIGNED_SHORT: ("H", 2), UNSIGNED_BYTE: ("B", 1)}
+
+
+class GlbReader:
+    """Read a GLB (single-buffer, embedded BIN) and decode accessors.
+
+    Intentionally minimal — supports the subset our writer emits plus standard
+    Blender exports of the same models: meshes/primitives, nodes, skins, and
+    float/int accessors. bufferView byteStride is honoured.
+    """
+
+    def __init__(self, data: bytes) -> None:
+        magic, ver, _ = struct.unpack_from("<III", data, 0)
+        if magic != 0x46546C67:
+            raise ValueError("not a GLB (bad magic)")
+        if ver != 2:
+            raise ValueError(f"unsupported GLB version {ver}")
+        jlen, jtype = struct.unpack_from("<II", data, 12)
+        if jtype != 0x4E4F534A:
+            raise ValueError("first chunk is not JSON")
+        self.json = json.loads(data[20:20 + jlen])
+        blen, btype = struct.unpack_from("<II", data, 20 + jlen)
+        if btype != 0x004E4942:
+            raise ValueError("second chunk is not BIN")
+        bin_off = 20 + jlen + 8
+        self._bin = data[bin_off:bin_off + blen]
+
+    @classmethod
+    def from_file(cls, path) -> "GlbReader":
+        from pathlib import Path
+        return cls(Path(path).read_bytes())
+
+    def accessor(self, index: int) -> List[tuple]:
+        a = self.json["accessors"][index]
+        bv = self.json["bufferViews"][a["bufferView"]]
+        comp_char, comp_size = _COMP[a["componentType"]]
+        ncomp = _TYPE_COUNT[a["type"]]
+        base = bv.get("byteOffset", 0) + a.get("byteOffset", 0)
+        stride = bv.get("byteStride") or (comp_size * ncomp)
+        fmt = "<" + comp_char * ncomp
+        out = []
+        for i in range(a["count"]):
+            out.append(struct.unpack_from(fmt, self._bin, base + i * stride))
+        return out
+
+    @property
+    def nodes(self):
+        return self.json.get("nodes", [])
+
+    @property
+    def skins(self):
+        return self.json.get("skins", [])
+
+    @property
+    def meshes(self):
+        return self.json.get("meshes", [])
+
+    @property
+    def materials(self):
+        return self.json.get("materials", [])
+
+    @property
+    def images(self):
+        return self.json.get("images", [])
+
 
 class GlbBuilder:
     def __init__(self) -> None:

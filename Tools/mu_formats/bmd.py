@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
-from .crypto import map_file_decrypt
+from .crypto import map_file_decrypt, map_file_encrypt
 
 # C struct strides (4-byte alignment, matching the MSVC/MinGW layout the
 # engine relies on). Derived field-by-field, not via Python struct sizing.
@@ -255,3 +255,69 @@ def parse_bmd(path: Path) -> BmdModel:
         bones.append(Bone(bname, parent, False, per_action))
 
     return BmdModel(name, version, meshes, bones, actions)
+
+
+def _name32(s: str) -> bytes:
+    raw = (s or "").encode("latin-1", "replace")[:32]
+    return raw + b"\x00" * (32 - len(raw))
+
+
+def write_bmd(model: BmdModel, path) -> None:
+    """Write a BmdModel as an encrypted version-0x0C BMD (mirrors BMD::Save2).
+
+    Mesh records use the same on-disk strides as the reader (Vertex=16,
+    Normal=20, TexCoord=8, Triangle record=64). Only the geometry fields the
+    engine reads are populated; the lightmap tail of each triangle is zeroed.
+    """
+    buf = bytearray()
+    buf += _name32(model.name)
+    buf += struct.pack("<hhh", len(model.meshes), len(model.bones),
+                       len(model.actions))
+
+    for m in model.meshes:
+        nv, nn, nt, ntri = (len(m.positions), len(m.normals),
+                            len(m.texcoords), len(m.faces))
+        buf += struct.pack("<hhhhh", nv, nn, nt, ntri, m.texture_id)
+        for (px, py, pz), node in zip(m.positions, m.vertex_bone):
+            buf += struct.pack("<h2x3f", node, px, py, pz)
+        # Normal_t carries a BindVertex; default 0 if not tracked.
+        binds = getattr(m, "normal_bind", None)
+        for i, ((nx, ny, nz), node) in enumerate(zip(m.normals, m.normal_bone)):
+            bind = binds[i] if binds else 0
+            buf += struct.pack("<h2x3fh2x", node, nx, ny, nz, bind)
+        for (u, v) in m.texcoords:
+            buf += struct.pack("<2f", u, v)
+        for (count, vi, ni, ti) in m.faces:
+            rec = bytearray(64)
+            rec[0] = count & 0xFF
+            struct.pack_into("<4h", rec, 2, *(list(vi) + [0, 0, 0, 0])[:4])
+            struct.pack_into("<4h", rec, 10, *(list(ni) + [0, 0, 0, 0])[:4])
+            struct.pack_into("<4h", rec, 18, *(list(ti) + [0, 0, 0, 0])[:4])
+            buf += rec
+        buf += _name32(m.texture_name)
+
+    for a in model.actions:
+        buf += struct.pack("<hB", a.num_keys, 1 if a.lock_positions else 0)
+        if a.lock_positions and a.num_keys > 0:
+            for p in a.positions:
+                buf += struct.pack("<3f", *p)
+
+    for b in model.bones:
+        if b.dummy:
+            buf += struct.pack("<B", 1)
+            continue
+        buf += struct.pack("<B", 0)
+        buf += _name32(b.name)
+        buf += struct.pack("<h", b.parent)
+        for ai, a in enumerate(model.actions):
+            keys = b.keys[ai] if ai < len(b.keys) else []
+            for k in range(a.num_keys):
+                p = keys[k].position if k < len(keys) else (0.0, 0.0, 0.0)
+                buf += struct.pack("<3f", *p)
+            for k in range(a.num_keys):
+                r = keys[k].rotation if k < len(keys) else (0.0, 0.0, 0.0)
+                buf += struct.pack("<3f", *r)
+
+    enc = map_file_encrypt(bytes(buf))
+    out = b"BMD" + bytes((0x0C,)) + struct.pack("<i", len(enc)) + enc
+    Path(path).write_bytes(out)

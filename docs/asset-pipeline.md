@@ -28,7 +28,7 @@ document for the work tracked by the plan
 |------|------|-------|
 | 1 | Copy `src/bin/Data/` → repo-root `Data/` | **Done.** 13,160 files / 158 dirs / 740,541,794 bytes, verified exact. `Data/` is git-ignored (`/Data/`). |
 | 2 | Python converters (textures, BMD; orchestrator) | **Done & run.** 7,481 PNG + 5,114 GLB produced, 0 errors, 186 non-model `.bmd` skipped. Terrain converter and animation export **not** done. |
-| 3 | Build reads from `Data/` + incremental sync | **Not started.** Build still copies from `src/bin/` (`src/CMakeLists.txt:157`). |
+| 3 | Build reads from `Data/` + incremental sync | **Dropped (out of scope).** Models are updated manually (BMD/OZJ dropped into `src/bin/Data/`). Build still copies from `src/bin/` (`src/CMakeLists.txt:157`). |
 | 4 | Blender export addon | Not started. |
 | 5 | In-engine verification of converted assets | Not started (GLBs validated structurally + numerically only). |
 
@@ -51,9 +51,11 @@ tools/
     textures.py          OZJ/OZT decode, PNG naming, OZJ encode
   convert_textures.py    OZJ/OZT -> PNG          (single file or --batch)
   convert_bmd_to_gltf.py BMD -> GLB              (single file or --batch)
+  convert_gltf_to_bmd.py GLB -> BMD              (reverse / "convert back")
   batch_convert_all.py   parallel orchestrator + conversion.log
   png_to_ozj.py          image -> OZJ            (drag-drop helper)
   Png-to-OZJ.bat         drag a PNG onto this to get a sibling .OZJ
+  Glb-to-BMD.bat         drag a GLB onto this to get a sibling .BMD
 ```
 
 ### Common commands
@@ -69,7 +71,29 @@ python tools/batch_convert_all.py Data --dry-run        # counts only
 python tools/convert_textures.py Data/Monster/FMbody_R.OZJ
 python tools/convert_bmd_to_gltf.py Data/Monster/monster186.bmd -o out.glb
 python tools/png_to_ozj.py mytexture.png                # or drag onto the .bat
+python tools/convert_gltf_to_bmd.py monster186.glb      # or drag onto Glb-to-BMD.bat
 ```
+
+### Round-trip workflow (manual model updates)
+
+The build does **not** auto-sync assets (Phase 3 is intentionally out of scope —
+models are updated manually). The round-trip is:
+
+1. `convert_bmd_to_gltf.py` a model (or use the already-converted `.glb` in `Data/`).
+2. Edit it in Blender (geometry, UVs, textures). Export back to `.glb` with
+   default settings (**+Y Up** on). Keep it next to the original `.bmd`.
+3. Drag the `.glb` onto `Glb-to-BMD.bat` (or run `convert_gltf_to_bmd.py`).
+4. Copy the resulting `.bmd` into the build's asset folder (`src/bin/Data/...`)
+   and rebuild.
+
+The reverse converter is scoped to **GLBs produced by this tool** (single-bone
+bind-pose skinning, MU-native coordinates). It reuses the original sibling
+`.bmd` as a **template** for the skeleton, animations and texture names — our
+GLBs are bind-pose only — and replaces only the geometry. The pristine original
+is backed up once to `<name>.bmd.orig` before being overwritten. Verified
+lossless: `BMD → GLB → BMD → GLB` reproduces identical geometry with animations
+and bones preserved. Without a template it falls back to a static, bind-pose-only
+model (no animation).
 
 Flags worth knowing:
 - `convert_bmd_to_gltf.py --no-orient` — emit raw MU orientation (see below).
