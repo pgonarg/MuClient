@@ -81,11 +81,20 @@ Open your `Data/` folder, pick a world, **Load world**. It:
   (or scrub the Type # to preview models live);
 - **imports** a model from any other `Object{M}/` folder (Import… button): it's
   assigned a free slot (`Type < 160`) in the current world and previewed live.
-- **exports** a re-encrypted `EncTerrain{N}.obj` (download) to drop into the world
-  folder manually. If any cross-folder imports were used, it also downloads a
-  `World{N}_imports.txt` copy-list (the `.obj` references models by slot index
-  against the world's own `Object{N}/`, so each imported BMD + its textures must be
-  copied there at the assigned slot for the game to load it).
+- **exports** a re-encrypted `EncTerrain{N}.obj`. If any cross-folder imports were
+  used it also exports an **`ExtraObjects.txt`** manifest; drop both into
+  `Data/World{N}/`. World 1 (Lorencia) loads objects by a named table, not
+  `ObjectNN` — the editor has that table built in (`LORENCIA_MODELS`).
+
+#### ExtraObjects.txt (cross-folder objects, engine-supported)
+
+The `.obj` only references models by slot index into the current world's own
+`Object{N}/` folder. To use a model from another folder without copying assets,
+the client reads an optional `Data/World{N}/ExtraObjects.txt` at world load
+(`MapManager.cpp`, just before `OpenObjectsEnc`). Each non-comment line is
+`slot folder file`, loading `Object{folder}/Object{file}.bmd` into `slot`
+(`slot < MAX_WORLD_OBJECTS`). The map editor generates this file from imports.
+Client-only (the server uses `.att`, not `.obj`); requires a client build.
 
 World/Object data formats (all use the MU map cipher; ports live in
 `map-editor.html`):

@@ -1302,6 +1302,39 @@ void CMapManager::LoadWorld(int Map)
         return;
     }
 
+    // --- Extra objects from other folders (map-editor cross-folder imports) ---
+    // Optional text file Data\World{N}\ExtraObjects.txt; each non-comment line is
+    // "slot folder file" and loads Object{folder}\Object{file}.bmd into model
+    // slot (slot < MAX_WORLD_OBJECTS). Lets a map reference objects that live in
+    // another world's Object folder without copying assets. Loaded here so the
+    // models exist before OpenObjectsEnc creates the placed objects.
+    {
+        wchar_t ExtraName[64];
+        mu_swprintf(ExtraName, L"Data\\%ls\\ExtraObjects.txt", WorldName);
+        FILE* fpExtra = _wfopen(ExtraName, L"rt");
+        if (fpExtra != NULL)
+        {
+            char line[256];
+            while (fgets(line, sizeof(line), fpExtra) != NULL)
+            {
+                if (line[0] == '#' || line[0] == '\n' || line[0] == '\r' || line[0] == '\0')
+                    continue;
+                int slot = -1, folder = -1, file = -1;
+                if (sscanf(line, "%d %d %d", &slot, &folder, &file) == 3 &&
+                    slot >= MODEL_WORLD_OBJECT && slot < MAX_WORLD_OBJECTS &&
+                    folder > 0 && file > 0)
+                {
+                    wchar_t Dir[32];
+                    mu_swprintf(Dir, L"Data\\Object%d\\", folder);
+                    gLoadData.AccessModel(slot, Dir, L"Object", file);
+                    mu_swprintf(Dir, L"Object%d\\", folder);
+                    gLoadData.OpenTexture(slot, Dir);
+                }
+            }
+            fclose(fpExtra);
+        }
+    }
+
     mu_swprintf(FileName, L"Data\\%ls\\EncTerrain%d.obj", WorldName, iMapWorld);
 
     iResult = OpenObjectsEnc(FileName);
