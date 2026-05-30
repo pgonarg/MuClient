@@ -94,10 +94,15 @@ After building:
 Asset sources are being migrated from `src/bin/Data/` to a repo-root **`Data/`**
 (git-ignored) and converted to Blender-native glTF/PNG by Python tools in
 `tools/`. Phase 1 (copy) and Phase 2 (texture + BMD converters, full run) are
-done; build integration (Phase 3) is not. For BMD/OZJ/OZT format details, the
-converters, orientation handling, drag-drop `Png-to-OZJ.bat`, and current status,
-see [`docs/asset-pipeline.md`](docs/asset-pipeline.md). **Read it before touching
-asset formats, converters, or `Data/`.**
+done. Build integration (Phase 3) was intentionally dropped — assets are updated
+manually. There is also a browser **map editor** (`Tools/map-editor.html`) and an
+engine-supported `ExtraObjects.txt` for cross-folder map objects.
+
+- **How to mod** (edit textures/models/maps, deploy): [`docs/modding-guide.md`](docs/modding-guide.md)
+- **Formats / converters / internals / status**: [`docs/asset-pipeline.md`](docs/asset-pipeline.md)
+
+**Read these before touching asset formats, converters, `Data/`, the map tools,
+or the world-object loading in `MapManager.cpp`.**
 
 ## References
 - Full build documentation: [`BUILD_AND_TEST.md`](BUILD_AND_TEST.md)

@@ -8,6 +8,10 @@ document for the work tracked by the plan
 > **Audience:** future contributors and AI assistants (Claude Code). It captures
 > the format details and gotchas that are expensive to re-derive, plus the
 > current state so work can resume without re-investigating.
+>
+> **Looking for how to actually mod the game** (edit a texture/model/map, deploy
+> changes)? See the task-oriented [`modding-guide.md`](modding-guide.md). This
+> document is the format/internals reference behind it.
 
 ---
 

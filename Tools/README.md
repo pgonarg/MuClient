@@ -32,8 +32,10 @@ Python 3.12 and Pillow (`python -m pip install Pillow`).
   to download a re-encrypted `EncTerrainN.obj` to drop back into the world folder.
   Needs internet (Three.js via CDN). See `docs/asset-pipeline.md` for details/caveats.
 
-Full reference (formats, status, gotchas, how-to):
-[`../docs/asset-pipeline.md`](../docs/asset-pipeline.md).
+- **How-to / modding workflows** (edit textures, models, maps; deploy):
+  [`../docs/modding-guide.md`](../docs/modding-guide.md)
+- **Formats / converter internals / status**:
+  [`../docs/asset-pipeline.md`](../docs/asset-pipeline.md)
 
 ## Other tools
 

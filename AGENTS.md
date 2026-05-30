@@ -30,12 +30,15 @@ Quick references:
 
 ## Asset pipeline
 
-Assets are being migrated to a Blender-centric workflow (source assets in
-repo-root `Data/`, converted to glTF/PNG by Python tools in `tools/`). Before
-touching asset formats, converters, or the `Data/` directory, read
-[`docs/asset-pipeline.md`](docs/asset-pipeline.md) — it documents the BMD/OZJ/OZT
-formats, the converters, orientation handling, current phase status, and known
-limitations.
+Assets use a Blender-centric workflow (source assets in repo-root `Data/`,
+converted to glTF/PNG by Python tools in `Tools/`), plus browser tools for viewing
+(`Tools/gltf-explorer.html`) and map editing (`Tools/map-editor.html`).
+
+- **How to mod** (edit textures/models/maps, deploy): [`docs/modding-guide.md`](docs/modding-guide.md)
+- **Formats, converters, internals, status**: [`docs/asset-pipeline.md`](docs/asset-pipeline.md)
+
+Read these before touching asset formats, converters, the `Data/` directory, the
+map tools, or world-object loading in `MapManager.cpp`.
 
 ## Branch and PR conventions
 
