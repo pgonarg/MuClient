@@ -68,6 +68,41 @@ resolved from the chosen folder. Models appear upright thanks to the `MU_Orient`
 node. Useful for quickly seeing "what is what". (Loads Three.js from a CDN, so it
 needs internet; Chromium/Firefox.)
 
+### Map editor (`tools/map-editor.html`)
+
+In-browser editor for a world's **object placement**, with terrain context.
+Open your `Data/` folder, pick a world, **Load world**. It:
+- renders terrain from `World{N}/TerrainHeight.bmp` (height) + `EncTerrain{N}.map`
+  (two tile-index layers + alpha) using a splatting shader over the tile PNGs;
+- places every object from `EncTerrain{N}.obj` as `Object{N}/Object{Type+1}.glb`
+  at its real position/angle/scale (missing models show as red placeholders);
+- lets you select (click/list), move/rotate/scale (gizmo, W/E/R), add, duplicate
+  (Ctrl+D), delete (Del);
+- **exports** a re-encrypted `EncTerrain{N}.obj` (download) to drop into the world
+  folder manually.
+
+World/Object data formats (all use the MU map cipher; ports live in
+`map-editor.html`):
+- `EncTerrain{N}.obj`: `[u8 version][u8 mapNumber][i16 count]` then
+  `count × (i16 Type, vec3 Position, vec3 Angle°, f32 Scale)` — `OpenObjectsEnc` /
+  `SaveObjects` in `ZzzObject.cpp`. World↔Object folder map is `iMapWorld =
+  WorldActive+1`, so `World{N}` ↔ `Object{N}`.
+- `EncTerrain{N}.map`: skip 2 bytes, then `Layer1[256×256]`, `Layer2[256×256]`,
+  `Alpha[256×256]` — `OpenTerrainMapping` / `SaveTerrainMapping`.
+- Height: `TerrainHeight.bmp` (24-bit grayscale, height = blue × 1.5);
+  `TERRAIN_SIZE=256`, `TERRAIN_SCALE=100`.
+- Tile index → file: fixed table (`TileGrass01`, `TileGrass02`, `TileGround01..03`,
+  `TileWater01`, `TileWood01`, `TileRock01..07`, `ExtTile01..16`). Tiles that ship
+  as both OZJ+OZT resolve to `<name>_ozj.png`.
+
+**Status:** v1. The binary layer (cipher, `.obj`/`.map` parse, encrypted `.obj`
+export, Type→model and tile resolution) is validated against the engine and real
+World1 data and round-trips byte-for-byte. The 3D rendering, coordinate mapping
+(MU Z-up ↔ three Y-up via a −90° X world group; object GLBs counter-rotated to
+cancel `MU_Orient`) and the terrain splat shader follow the engine conventions but
+need in-browser verification/tuning (tile repeat scale, height orientation).
+**Always keep a backup before overwriting a real `EncTerrain{N}.obj`.**
+
 ### Common commands
 
 ```bash

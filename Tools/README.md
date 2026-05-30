@@ -25,6 +25,13 @@ Python 3.12 and Pillow (`python -m pip install Pillow`).
   the selected model in 3D with its textures (Three.js). Drag to orbit, scroll to
   zoom, ↑/↓ to step through. Needs internet (Three.js via CDN).
 
+- **`map-editor.html`** — open in a browser, **Open Data folder…**, pick a world,
+  **Load world**. Renders the terrain (heightmap + tile textures) and every placed
+  object as its GLB at the real position/angle/scale. Select objects (click or list),
+  move/rotate/scale with the gizmo (W/E/R), add/duplicate/delete, then **Export .obj**
+  to download a re-encrypted `EncTerrainN.obj` to drop back into the world folder.
+  Needs internet (Three.js via CDN). See `docs/asset-pipeline.md` for details/caveats.
+
 Full reference (formats, status, gotchas, how-to):
 [`../docs/asset-pipeline.md`](../docs/asset-pipeline.md).
 

@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MU Map Editor</title>
+<style>
+  :root { --bg:#1b1c21; --panel:#24262d; --panel2:#2c2f37; --line:#3a3d47;
+          --text:#e6e7ea; --muted:#9aa0ad; --accent:#5aa9ff; --accent2:#2f6db0;
+          --ok:#5fd08a; --warn:#ffb454; --err:#ff8585; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; font:13px/1.45 system-ui,Segoe UI,Roboto,sans-serif;
+              color:var(--text); background:var(--bg); overflow:hidden; }
+  #app { display:grid; grid-template-columns:280px 1fr 250px; grid-template-rows:auto 1fr;
+         grid-template-areas:"head head head" "side view insp"; height:100%; }
+  header { grid-area:head; display:flex; gap:10px; align-items:center; padding:9px 12px;
+           background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:14px; margin:0 8px 0 0; font-weight:600; }
+  .spacer { flex:1; }
+  button, label.btn, select { background:var(--accent2); color:#fff; border:0; border-radius:6px;
+           padding:6px 11px; cursor:pointer; font-size:12px; }
+  button:hover, label.btn:hover { background:var(--accent); }
+  button.ghost { background:transparent; border:1px solid var(--line); color:var(--text); }
+  button.ghost.on { background:var(--accent2); border-color:var(--accent2); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  select { background:var(--panel2); border:1px solid var(--line); }
+  #side, #insp { background:var(--panel); overflow:auto; }
+  #side { grid-area:side; border-right:1px solid var(--line); }
+  #insp { grid-area:insp; border-left:1px solid var(--line); padding:10px; }
+  #view { grid-area:view; position:relative; }
+  #cv { position:absolute; inset:0; }
+  canvas { display:block; }
+  .sec { padding:8px 12px; color:var(--accent); font-weight:600; font-size:11px;
+          text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid var(--line);
+          position:sticky; top:0; background:var(--panel); }
+  .item { padding:5px 12px; cursor:pointer; white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; display:flex; gap:6px; }
+  .item:hover { background:var(--panel2); }
+  .item.sel { background:var(--accent2); }
+  .item .t { color:var(--muted); font-variant-numeric:tabular-nums; }
+  #insp label { display:block; color:var(--muted); margin:8px 0 2px; font-size:11px; }
+  #insp input { width:100%; background:var(--panel2); border:1px solid var(--line);
+                color:var(--text); border-radius:5px; padding:5px 7px; font-size:12px; }
+  .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; }
+  #toolbar { position:absolute; left:12px; top:12px; display:flex; gap:6px; flex-wrap:wrap; }
+  #status { position:absolute; left:12px; bottom:12px; color:var(--muted);
+            background:rgba(20,21,26,.8); border:1px solid var(--line); border-radius:6px;
+            padding:5px 9px; max-width:60%; }
+  #hint { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+          flex-direction:column; gap:12px; color:var(--muted); text-align:center; padding:24px; }
+  #hint h2 { color:var(--text); }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
+  .pill { font-size:11px; padding:2px 7px; border-radius:10px; background:var(--panel2); color:var(--muted); }
+  code { color:#cbd5e1; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>MU Map Editor</h1>
+    <label class="btn">Open Data folder…
+      <input id="dir" type="file" webkitdirectory directory multiple hidden /></label>
+    <select id="world" title="World"></select>
+    <button id="load" disabled>Load world</button>
+    <span class="pill" id="objCount">no world</span>
+    <span class="spacer"></span>
+    <button id="add" class="ghost" disabled title="Add object at view center">+ Object</button>
+    <button id="dup" class="ghost" disabled title="Duplicate (Ctrl+D)">Duplicate</button>
+    <button id="del" class="ghost" disabled title="Delete (Del)">Delete</button>
+    <button id="save" disabled title="Export EncTerrainN.obj">Export .obj</button>
+  </header>
+
+  <div id="side">
+    <div class="sec">Objects</div>
+    <div id="list"></div>
+  </div>
+
+  <div id="view">
+    <div id="cv"></div>
+    <div id="toolbar">
+      <button id="mMove" class="ghost on" title="Move (W)">Move</button>
+      <button id="mRot"  class="ghost"    title="Rotate (E)">Rotate</button>
+      <button id="mScale" class="ghost"   title="Scale (R)">Scale</button>
+      <span style="width:8px"></span>
+      <button id="bGrid" class="ghost on" title="Grid">Grid</button>
+      <button id="bTerr" class="ghost on" title="Terrain">Terrain</button>
+      <button id="bWire" class="ghost"    title="Wireframe terrain">Wire</button>
+    </div>
+    <div id="status">Open your <b>Data/</b> folder to begin.</div>
+    <div id="hint">
+      <h2>MU Map Editor</h2>
+      <div>Click <b>Open Data folder…</b> and choose your <b>Data/</b> directory.<br>
+        Pick a world, <b>Load world</b>, then click objects to select.<br>
+        <kbd>W</kbd> move · <kbd>E</kbd> rotate · <kbd>R</kbd> scale · <kbd>Del</kbd> delete ·
+        <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicate · <kbd>F</kbd> focus</div>
+      <div style="color:#6b7280">Edits export to a re-encrypted <code>EncTerrainN.obj</code> you drop back into the world folder.<br>
+        Needs internet (Three.js via CDN). Chromium/Firefox.</div>
+    </div>
+  </div>
+
+  <div id="insp">
+    <div id="noSel" style="color:var(--muted)">No selection.<br><br>Click an object in the viewport or list.</div>
+    <div id="sel" style="display:none">
+      <label>Type (model)</label>
+      <input id="iType" type="number" step="1" min="0" />
+      <div id="iModel" class="pill" style="margin-top:4px"></div>
+      <label>Position (MU x / y / z)</label>
+      <div class="row3"><input id="px" type="number" step="1"><input id="py" type="number" step="1"><input id="pz" type="number" step="1"></div>
+      <label>Angle (deg x / y / z)</label>
+      <div class="row3"><input id="ax" type="number" step="1"><input id="ay" type="number" step="1"><input id="az" type="number" step="1"></div>
+      <label>Scale</label>
+      <input id="sc" type="number" step="0.05" />
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const $ = s => document.querySelector(s);
+const TERRAIN_SIZE = 256, TERRAIN_SCALE = 100, DEG = Math.PI/180;
+
+// ---------- MU map cipher (port of MapFileDecrypt/Encrypt) ----------------
+const MAP_XOR = [0xD1,0x73,0x52,0xF6,0xD2,0x9A,0xCB,0x27,0x3E,0xAF,0x59,0x31,0x37,0xB3,0xE7,0xA2];
+function mapDecrypt(src){ const o=new Uint8Array(src.length); let w=0x5E;
+  for(let i=0;i<src.length;i++){ o[i]=((src[i]^MAP_XOR[i%16])-(w&0xFF))&0xFF; w=(src[i]+0x3D)&0xFF; } return o; }
+function mapEncrypt(src){ const o=new Uint8Array(src.length); let w=0x5E;
+  for(let i=0;i<src.length;i++){ const e=(((src[i]+(w&0xFF))&0xFF)^MAP_XOR[i%16])&0xFF; o[i]=e; w=(e+0x3D)&0xFF; } return o; }
+
+// ---------- terrain tile index -> filename (standard MU table) ------------
+const TILE_FILES = ['TileGrass01','TileGrass02','TileGround01','TileGround02','TileGround03',
+  'TileWater01','TileWood01','TileRock01','TileRock02','TileRock03','TileRock04','TileRock05',
+  'TileRock06','TileRock07'];
+for(let i=1;i<=16;i++) TILE_FILES[13+i] = 'ExtTile'+(i<10?'0'+i:i);
+
+function objModelName(type){ const i=type+1; return (i<10?'Object0'+i:'Object'+i)+'.glb'; }
+
+// ---------- file index ----------------------------------------------------
+let files = new Map();   // lowercased relpath -> File
+let worldsAvail = [];    // [{n, dir}]
+function indexFiles(list){
+  files = new Map(); const worlds = new Map();
+  for(const f of list){
+    const rel = (f.webkitRelativePath||f.name).replace(/\\/g,'/');
+    files.set(rel.toLowerCase(), f);
+    const m = rel.match(/(^|\/)World(\d+)\/EncTerrain(\d+)\.obj$/i);
+    if(m){ const n=+m[3]; worlds.set(n, rel.slice(0, rel.lastIndexOf('/'))); } // worldDir
+  }
+  worldsAvail = [...worlds.entries()].map(([n,worldDir])=>({n,worldDir})).sort((a,b)=>a.n-b.n);
+  const sel = $('#world'); sel.innerHTML='';
+  for(const w of worldsAvail){ const o=document.createElement('option'); o.value=w.n; o.textContent='World '+w.n; sel.appendChild(o); }
+  $('#load').disabled = worldsAvail.length===0;
+  status(worldsAvail.length? `${worldsAvail.length} world(s) found — pick one and Load.` : 'No EncTerrain*.obj found under the chosen folder.');
+}
+function fileBlob(path){ const f=files.get(path.toLowerCase()); return f? URL.createObjectURL(f):null; }
+async function fileBuf(path){ const f=files.get(path.toLowerCase()); return f? new Uint8Array(await f.arrayBuffer()):null; }
+
+// ---------- three setup ---------------------------------------------------
+const cv = $('#cv');
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.outputColorSpace = THREE.SRGBColorSpace; cv.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x1b1c21);
+const camera = new THREE.PerspectiveCamera(50,1,1,500000);
+camera.position.set(8000,9000,8000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor=.08;
+scene.add(new THREE.HemisphereLight(0xffffff,0x40454f,1.1));
+const sun = new THREE.DirectionalLight(0xffffff,1.3); sun.position.set(1,2,1.4); scene.add(sun);
+
+// World group: MU is Z-up, three is Y-up. Content is authored in MU coords
+// (x, y, z=height); this -90deg X rotation displays it Y-up.
+const world = new THREE.Group(); world.rotation.x = -Math.PI/2; scene.add(world);
+
+const grid = new THREE.GridHelper(TERRAIN_SIZE*TERRAIN_SCALE, 64, 0x3a4150, 0x2a2e38);
+grid.position.set(TERRAIN_SIZE*TERRAIN_SCALE/2, 0, TERRAIN_SIZE*TERRAIN_SCALE/2); scene.add(grid);
+
+const gizmo = new TransformControls(camera, renderer.domElement);
+gizmo.addEventListener('dragging-changed', e=> controls.enabled = !e.value);
+gizmo.addEventListener('objectChange', ()=> { if(selected) pullFromNode(selected); refreshInspector(); });
+scene.add(gizmo);
+
+// ---------- world state ---------------------------------------------------
+let worldNum = null, worldDir = '', objectDir = '';
+let terrainMesh = null;
+let objects = [];          // [{type, pos:[3], ang:[3], scale, node}]
+let selected = null;
+const glbCache = new Map();// type -> Promise<THREE.Group template>
+const loader = new GLTFLoader();
+
+function status(t){ $('#status').innerHTML = t; }
+
+// ---------- terrain -------------------------------------------------------
+function parseBMPHeight(bytes){
+  // Standard 24-bit BMP. Returns Float32 [256*256] indexed y*256+x (MU order),
+  // height = pixel * 1.5 (engine factor).
+  if(!bytes || bytes[0]!==0x42 || bytes[1]!==0x4D) return null;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset);
+  const dataOff = dv.getUint32(10, true);
+  const w = dv.getInt32(18, true), h = dv.getInt32(22, true);
+  const bpp = dv.getUint16(28, true);
+  const absH = Math.abs(h), topDown = h < 0;
+  const rowSize = Math.floor((bpp*w + 31)/32)*4;
+  const px = bpp>>3;
+  const out = new Float32Array(TERRAIN_SIZE*TERRAIN_SIZE);
+  for(let y=0;y<TERRAIN_SIZE;y++){
+    const srcRow = topDown ? y : (absH-1-y);
+    for(let x=0;x<TERRAIN_SIZE;x++){
+      const o = dataOff + srcRow*rowSize + Math.min(x,w-1)*px;
+      out[y*TERRAIN_SIZE+x] = bytes[o] * 1.5;   // blue channel (grayscale)
+    }
+  }
+  return out;
+}
+
+async function buildTerrain(){
+  if(terrainMesh){ world.remove(terrainMesh); terrainMesh.geometry.dispose(); terrainMesh.material.dispose(); terrainMesh=null; }
+  // height
+  let H = parseBMPHeight(await fileBuf(`${worldDir}/TerrainHeight.bmp`));
+  if(!H) H = new Float32Array(TERRAIN_SIZE*TERRAIN_SIZE); // flat fallback
+  // mapping (.map)
+  let L1=null,L2=null,AL=null;
+  const mapBytes = await fileBuf(`${worldDir}/EncTerrain${worldNum}.map`);
+  if(mapBytes){ const d=mapDecrypt(mapBytes); L1=d.subarray(2,2+65536); L2=d.subarray(2+65536,2+2*65536); AL=d.subarray(2+2*65536,2+3*65536); }
+
+  const atlas = await buildTileAtlas();
+  const S=TERRAIN_SIZE, N=S-1;
+  const pos=[], uv=[], l1=[], l2=[], al=[];
+  const H_=(x,y)=>H[(Math.min(y,S-1))*S + Math.min(x,S-1)];
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+    const i=y*S+x;
+    const t1 = L1?L1[i]:0, t2 = L2?L2[i]:255, a = AL?AL[i]/255:0;
+    // quad corners (MU coords)
+    const X=x*TERRAIN_SCALE, Y=y*TERRAIN_SCALE, X1=(x+1)*TERRAIN_SCALE, Y1=(y+1)*TERRAIN_SCALE;
+    const c=[[X,Y,H_(x,y)],[X1,Y,H_(x+1,y)],[X1,Y1,H_(x+1,y+1)],[X,Y1,H_(x,y+1)]];
+    const uvq=[[0,0],[1,0],[1,1],[0,1]];
+    for(const tri of [[0,1,2],[0,2,3]]) for(const k of tri){
+      pos.push(c[k][0],c[k][1],c[k][2]); uv.push(uvq[k][0],uvq[k][1]);
+      l1.push(t1); l2.push(t2); al.push(a);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2));
+  g.setAttribute('aL1', new THREE.Float32BufferAttribute(l1,1));
+  g.setAttribute('aL2', new THREE.Float32BufferAttribute(l2,1));
+  g.setAttribute('aAlpha', new THREE.Float32BufferAttribute(al,1));
+  g.computeVertexNormals();
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms:{ uAtlas:{value:atlas.tex}, uCols:{value:atlas.cols}, uRepeat:{value:4.0},
+               uLight:{value:new THREE.Vector3(0.5,0.8,0.4).normalize()} },
+    vertexShader:`
+      attribute float aL1; attribute float aL2; attribute float aAlpha;
+      varying float vL1; varying float vL2; varying float vA; varying vec2 vUv; varying vec3 vN;
+      void main(){ vL1=aL1; vL2=aL2; vA=aAlpha; vUv=uv; vN=normalize(normalMatrix*normal);
+        gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader:`
+      precision highp float;
+      uniform sampler2D uAtlas; uniform float uCols; uniform float uRepeat; uniform vec3 uLight;
+      varying float vL1; varying float vL2; varying float vA; varying vec2 vUv; varying vec3 vN;
+      vec4 tile(float idx, vec2 uv){
+        float col = mod(idx, uCols); float row = floor(idx/uCols);
+        vec2 f = fract(uv*uRepeat);
+        f = clamp(f, 0.003, 0.997);            // inset to avoid atlas bleed
+        vec2 a = (vec2(col,row)+f)/uCols;
+        return texture2D(uAtlas, a);
+      }
+      void main(){
+        vec4 c1 = tile(vL1, vUv); vec4 c2 = tile(vL2, vUv);
+        vec3 col = mix(c1.rgb, c2.rgb, clamp(vA,0.0,1.0));
+        float d = max(dot(normalize(vN), normalize(uLight)), 0.0)*0.7 + 0.45;
+        gl_FragColor = vec4(col*d, 1.0);
+      }`
+  });
+  terrainMesh = new THREE.Mesh(g, mat);
+  terrainMesh.visible = $('#bTerr').classList.contains('on');
+  world.add(terrainMesh);
+  return H;
+}
+
+// Terrain tiles ship as OZJ (and often OZT too); our converter renames colliding
+// pairs to <name>_ozj.png / <name>_ozt.png. The engine uses the .jpg (OZJ) tile.
+function tilePngBlob(name){
+  for(const suf of ['_ozj.png', '.png', '_ozt.png']){
+    const u = fileBlob(`${worldDir}/${name}${suf}`);
+    if(u) return u;
+  }
+  return null;
+}
+
+async function buildTileAtlas(){
+  const cols = 8, cell = 128, rows = Math.ceil(TILE_FILES.length/cols);
+  const cvs = document.createElement('canvas'); cvs.width=cols*cell; cvs.height=rows*cell;
+  const ctx = cvs.getContext('2d'); ctx.fillStyle='#556644'; ctx.fillRect(0,0,cvs.width,cvs.height);
+  await Promise.all(TILE_FILES.map((name,idx)=> new Promise(res=>{
+    const url = tilePngBlob(name);
+    if(!url){ res(); return; }
+    const img = new Image();
+    img.onload=()=>{ ctx.drawImage(img,(idx%cols)*cell,Math.floor(idx/cols)*cell,cell,cell); URL.revokeObjectURL(url); res(); };
+    img.onerror=()=>{ URL.revokeObjectURL(url); res(); };
+    img.src=url;
+  })));
+  const tex = new THREE.CanvasTexture(cvs); tex.colorSpace=THREE.SRGBColorSpace;
+  tex.minFilter=THREE.LinearMipmapLinearFilter; tex.magFilter=THREE.LinearFilter; tex.needsUpdate=true;
+  return {tex, cols};
+}
+
+// ---------- objects -------------------------------------------------------
+loader.manager.setURLModifier(url=>{
+  let key = decodeURIComponent(url).replace(/\\/g,'/').toLowerCase().replace(/^\.\//,'');
+  if(files.has(key)) return fileBlob(key);
+  const base = key.slice(key.lastIndexOf('/')+1);
+  const cand = (objectDir+'/'+base).toLowerCase();
+  if(files.has(cand)) return fileBlob(cand);
+  for(const p of files.keys()) if(p.endsWith('/'+base)) return fileBlob(p);
+  return url;
+});
+
+function loadTemplate(type){
+  if(glbCache.has(type)) return glbCache.get(type);
+  const path = `${objectDir}/${objModelName(type)}`;
+  const p = (async()=>{
+    const buf = await fileBuf(path);
+    if(!buf) return null;
+    return await new Promise((res)=> loader.parse(buf.buffer.slice(buf.byteOffset,buf.byteOffset+buf.byteLength),
+      objectDir+'/', g=> res(g.scene), ()=> res(null)));
+  })();
+  glbCache.set(type, p); return p;
+}
+
+// MU angle (deg, AngleMatrix order Z*Y*X) -> quaternion
+function angleQuat(ax,ay,az){
+  const m = new THREE.Matrix4();
+  const rx=new THREE.Matrix4().makeRotationX(ax*DEG);
+  const ry=new THREE.Matrix4().makeRotationY(ay*DEG);
+  const rz=new THREE.Matrix4().makeRotationZ(az*DEG);
+  m.multiply(rz).multiply(ry).multiply(rx);   // Z*Y*X
+  const q=new THREE.Quaternion(); q.setFromRotationMatrix(m); return q;
+}
+// quaternion -> MU euler degrees (inverse of above, Z*Y*X)
+function quatAngle(q){
+  const m=new THREE.Matrix4().makeRotationFromQuaternion(q); const e=m.elements;
+  // column-major; rotation R with R = Rz*Ry*Rx. Extract:
+  const r00=e[0],r10=e[1],r20=e[2], r21=e[6], r22=e[10];
+  const sy=-r20; const ry=Math.asin(Math.max(-1,Math.min(1,sy)));
+  let rx,rz;
+  if(Math.abs(sy)<0.99999){ rx=Math.atan2(r21,r22); rz=Math.atan2(r10,r00); }
+  else { rx=Math.atan2(-e[9],e[5]); rz=0; }
+  return [rx/DEG, ry/DEG, rz/DEG];
+}
+
+async function addObjectNode(o){
+  const tmpl = await loadTemplate(o.type);
+  const node = new THREE.Group();           // placement node, MU space
+  node.position.set(o.pos[0], o.pos[1], o.pos[2]);
+  node.quaternion.copy(angleQuat(o.ang[0], o.ang[1], o.ang[2]));
+  node.scale.setScalar(o.scale);
+  if(tmpl){
+    const corr = new THREE.Group(); corr.rotation.x = Math.PI/2; // cancel MU_Orient (-90X)
+    corr.add(tmpl.clone(true)); node.add(corr);
+  } else {
+    const ph = new THREE.Mesh(new THREE.BoxGeometry(80,80,160),
+      new THREE.MeshStandardMaterial({color:0xcc4444}));
+    ph.position.z=80; node.add(ph);            // missing model placeholder
+  }
+  node.userData.obj = o; o.node = node; world.add(node);
+}
+
+// read transform back from a node into its object record
+function pullFromNode(o){
+  const n=o.node;
+  o.pos=[n.position.x,n.position.y,n.position.z];
+  o.ang=quatAngle(n.quaternion);
+  o.scale=(n.scale.x+n.scale.y+n.scale.z)/3;
+}
+
+// ---------- load world ----------------------------------------------------
+async function loadWorld(n){
+  worldNum=n; const w=worldsAvail.find(w=>w.n===n); worldDir=w.worldDir;
+  const parent = worldDir.lastIndexOf('/')>=0 ? worldDir.slice(0,worldDir.lastIndexOf('/')) : '';
+  objectDir = (parent?parent+'/':'') + `Object${n}`;   // Data/Object{N}, sibling of World{N}
+  $('#hint').style.display='none';
+  status(`Loading World ${n}…`);
+  // clear previous
+  for(const o of objects) if(o.node) world.remove(o.node);
+  objects=[]; glbCache.clear(); select(null);
+
+  const H = await buildTerrain();
+
+  const objBytes = await fileBuf(`${worldDir}/EncTerrain${n}.obj`);
+  const d = mapDecrypt(objBytes);
+  const count = new DataView(d.buffer).getInt16(2, true);
+  let p=4; const recs=[];
+  for(let i=0;i<count;i++){
+    const dv=new DataView(d.buffer, d.byteOffset+p);
+    const type=dv.getInt16(0,true);
+    const pos=[dv.getFloat32(2,true),dv.getFloat32(6,true),dv.getFloat32(10,true)];
+    const ang=[dv.getFloat32(14,true),dv.getFloat32(18,true),dv.getFloat32(22,true)];
+    const scale=dv.getFloat32(26,true);
+    recs.push({type,pos,ang,scale}); p+=30;
+  }
+  objects=recs;
+  // instance (batched to keep UI responsive)
+  for(let i=0;i<objects.length;i++){ await addObjectNode(objects[i]); if(i%200===0) status(`Placing objects ${i}/${objects.length}…`); }
+  rebuildList();
+  $('#objCount').textContent = `World ${n}: ${objects.length} objects`;
+  ['#add','#save'].forEach(s=>$(s).disabled=false);
+  status(`World ${n} loaded — ${objects.length} objects. Click to select.`);
+  // frame terrain
+  const c=TERRAIN_SIZE*TERRAIN_SCALE/2; controls.target.set(c,0,c);
+  camera.position.set(c, 12000, c+14000); controls.update();
+}
+
+// ---------- selection / inspector ----------------------------------------
+function select(o){
+  selected=o;
+  if(o){ gizmo.attach(o.node); $('#sel').style.display='block'; $('#noSel').style.display='none'; }
+  else { gizmo.detach(); $('#sel').style.display='none'; $('#noSel').style.display='block'; }
+  ['#dup','#del'].forEach(s=>$(s).disabled=!o);
+  refreshInspector(); highlightList();
+}
+function refreshInspector(){
+  if(!selected) return; const o=selected;
+  $('#iType').value=o.type; $('#iModel').textContent=objModelName(o.type);
+  $('#px').value=Math.round(o.pos[0]); $('#py').value=Math.round(o.pos[1]); $('#pz').value=Math.round(o.pos[2]);
+  $('#ax').value=Math.round(o.ang[0]); $('#ay').value=Math.round(o.ang[1]); $('#az').value=Math.round(o.ang[2]);
+  $('#sc').value=+o.scale.toFixed(3);
+}
+function applyInspector(){
+  if(!selected) return; const o=selected, n=o.node;
+  o.pos=[+$('#px').value,+$('#py').value,+$('#pz').value];
+  o.ang=[+$('#ax').value,+$('#ay').value,+$('#az').value];
+  o.scale=+$('#sc').value||1;
+  n.position.set(...o.pos); n.quaternion.copy(angleQuat(...o.ang)); n.scale.setScalar(o.scale);
+}
+['px','py','pz','ax','ay','az','sc'].forEach(id=> $('#'+id).addEventListener('change', applyInspector));
+$('#iType').addEventListener('change', async()=>{
+  if(!selected) return; const o=selected; o.type=+$('#iType').value;
+  world.remove(o.node); await addObjectNode(o); gizmo.attach(o.node); refreshInspector(); rebuildList();
+});
+
+// ---------- object list ---------------------------------------------------
+function rebuildList(){
+  const el=$('#list'); el.innerHTML='';
+  objects.forEach((o,i)=>{
+    const d=document.createElement('div'); d.className='item'; d.dataset.i=i;
+    d.innerHTML=`<span class="t">#${i}</span><span>${objModelName(o.type).replace('.glb','')}</span>`;
+    d.onclick=()=>{ select(o); focus(o); };
+    el.appendChild(d);
+  });
+  highlightList();
+}
+function highlightList(){
+  const i = selected? objects.indexOf(selected):-1;
+  $('#list').querySelectorAll('.item').forEach(el=> el.classList.toggle('sel', +el.dataset.i===i));
+  const s=$('#list').querySelector('.item.sel'); if(s) s.scrollIntoView({block:'nearest'});
+}
+
+// ---------- picking -------------------------------------------------------
+const ray=new THREE.Raycaster(), mouse=new THREE.Vector2();
+renderer.domElement.addEventListener('pointerdown', e=>{
+  if(gizmo.dragging || e.button!==0) return;
+  const r=renderer.domElement.getBoundingClientRect();
+  mouse.x=((e.clientX-r.left)/r.width)*2-1; mouse.y=-((e.clientY-r.top)/r.height)*2+1;
+  ray.setFromCamera(mouse,camera);
+  const hits=ray.intersectObjects(objects.map(o=>o.node),true);
+  if(hits.length){ let n=hits[0].object; while(n && !n.userData.obj) n=n.parent; if(n) select(n.userData.obj); }
+});
+
+// ---------- actions -------------------------------------------------------
+function focus(o){ const p=new THREE.Vector3(); o.node.getWorldPosition(p);
+  controls.target.copy(p); camera.position.copy(p).add(new THREE.Vector3(600,600,600)); controls.update(); }
+$('#add').onclick=async()=>{
+  // place at view target, on terrain if available
+  const t=controls.target.clone(); // three world coords
+  // convert three -> MU: inverse of world group (-90X): MU = Rx(90)*three
+  const muv=t.clone().applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI/2));
+  const o={type:(selected?selected.type:0), pos:[Math.round(muv.x),Math.round(muv.y),Math.round(muv.z)], ang:[0,0,0], scale:1};
+  objects.push(o); await addObjectNode(o); rebuildList(); select(o);
+};
+$('#dup').onclick=async()=>{ if(!selected) return;
+  const o={...selected, pos:[...selected.pos], ang:[...selected.ang], node:null};
+  o.pos[0]+=100; objects.push(o); await addObjectNode(o); rebuildList(); select(o); };
+$('#del').onclick=()=>{ if(!selected) return;
+  world.remove(selected.node); objects.splice(objects.indexOf(selected),1); select(null); rebuildList(); };
+
+// ---------- export --------------------------------------------------------
+$('#save').onclick=()=>{
+  const buf=new ArrayBuffer(4 + objects.length*30); const dv=new DataView(buf);
+  dv.setUint8(0,0); dv.setUint8(1,worldNum&0xFF); dv.setInt16(2,objects.length,true);
+  let p=4;
+  for(const o of objects){
+    dv.setInt16(p,o.type,true); p+=2;
+    dv.setFloat32(p,o.pos[0],true); dv.setFloat32(p+4,o.pos[1],true); dv.setFloat32(p+8,o.pos[2],true); p+=12;
+    dv.setFloat32(p,o.ang[0],true); dv.setFloat32(p+4,o.ang[1],true); dv.setFloat32(p+8,o.ang[2],true); p+=12;
+    dv.setFloat32(p,o.scale,true); p+=4;
+  }
+  const enc=mapEncrypt(new Uint8Array(buf));
+  const blob=new Blob([enc],{type:'application/octet-stream'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`EncTerrain${worldNum}.obj`; a.click(); URL.revokeObjectURL(a.href);
+  status(`Exported EncTerrain${worldNum}.obj (${objects.length} objects). Drop it into World${worldNum}/.`);
+};
+
+// ---------- gizmo modes / toggles / keys ----------------------------------
+function setMode(m){ gizmo.setMode(m);
+  $('#mMove').classList.toggle('on',m==='translate');
+  $('#mRot').classList.toggle('on',m==='rotate');
+  $('#mScale').classList.toggle('on',m==='scale'); }
+$('#mMove').onclick=()=>setMode('translate');
+$('#mRot').onclick=()=>setMode('rotate');
+$('#mScale').onclick=()=>setMode('scale');
+$('#bGrid').onclick=e=>{ grid.visible=!grid.visible; e.target.classList.toggle('on',grid.visible); };
+$('#bTerr').onclick=e=>{ if(terrainMesh){ terrainMesh.visible=!terrainMesh.visible; e.target.classList.toggle('on',terrainMesh.visible);} };
+$('#bWire').onclick=e=>{ if(terrainMesh){ terrainMesh.material.wireframe=!terrainMesh.material.wireframe; e.target.classList.toggle('on',terrainMesh.material.wireframe);} };
+window.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+  if(e.key==='w'||e.key==='W') setMode('translate');
+  if(e.key==='e'||e.key==='E') setMode('rotate');
+  if(e.key==='r'||e.key==='R') setMode('scale');
+  if(e.key==='f'||e.key==='F'){ if(selected) focus(selected); }
+  if(e.key==='Delete'){ $('#del').click(); }
+  if((e.ctrlKey||e.metaKey)&&(e.key==='d'||e.key==='D')){ e.preventDefault(); $('#dup').click(); }
+});
+
+// ---------- UI wiring -----------------------------------------------------
+$('#dir').addEventListener('change', e=> indexFiles(e.target.files));
+$('#world').addEventListener('change', ()=>{});
+$('#load').onclick=()=> loadWorld(+$('#world').value);
+
+// ---------- loop / resize -------------------------------------------------
+function resize(){ const w=cv.clientWidth,h=cv.clientHeight; renderer.setSize(w,h,false);
+  camera.aspect=w/h; camera.updateProjectionMatrix(); }
+new ResizeObserver(resize).observe(cv); resize();
+renderer.setAnimationLoop(()=>{ controls.update(); renderer.render(scene,camera); });
+</script>
+</body>
+</html>
