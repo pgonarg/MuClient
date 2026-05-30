@@ -437,7 +437,10 @@ async function loadWorld(n){
   ['#add','#save'].forEach(s=>$(s).disabled=false);
   const warn = missing? ` — ⚠ ${missing} missing model(s) from ${objectDir}/ (shown as red boxes)` : '';
   status(`World ${n}: ${ok} models loaded, ${missing} placeholders.${warn}`);
-  // frame the actual terrain (world-space bbox; accounts for the -90X world group)
+  // frame the actual terrain (world-space bbox; accounts for the -90X world group).
+  // Force matrixWorld to propagate the group rotation first, or the bbox comes back
+  // in un-rotated MU space and the camera aims at empty coordinates.
+  world.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(terrainMesh || world);
   const ctr = box.getCenter(new THREE.Vector3());
   const span = box.getSize(new THREE.Vector3()).length() || 25600;
