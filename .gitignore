@@ -47,3 +47,13 @@ docs/reviews/
 compile.txt
 compile_error.txt
 out/
+
+# Python tooling artifacts (tools/ asset converters)
+__pycache__/
+*.pyc
+
+# Source assets (Blender-centric pipeline, ~700 MB of binary BMD/OZJ/OZT/glTF/PNG).
+# Kept on disk as the single source of truth; not versioned. Revisit if/when a
+# Git LFS strategy is adopted for converted glTF/PNG outputs.
+/Data/
+robocopy_phase1.log

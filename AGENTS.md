@@ -28,6 +28,15 @@ Quick references:
 - Requirements and IDE-specific instructions: [`README.md`](README.md).
 - Cross-platform / WSL build details: [`docs/build-guide.md`](docs/build-guide.md).
 
+## Asset pipeline
+
+Assets are being migrated to a Blender-centric workflow (source assets in
+repo-root `Data/`, converted to glTF/PNG by Python tools in `tools/`). Before
+touching asset formats, converters, or the `Data/` directory, read
+[`docs/asset-pipeline.md`](docs/asset-pipeline.md) — it documents the BMD/OZJ/OZT
+formats, the converters, orientation handling, current phase status, and known
+limitations.
+
 ## Branch and PR conventions
 
 - Target branch for PRs is `main`.

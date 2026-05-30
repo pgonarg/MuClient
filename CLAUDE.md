@@ -89,7 +89,18 @@ After building:
 4. **Complex shader weight calculations** → tends to break shadow rendering; keep it simple
 5. **Applying improvements to only one shader (character OR terrain)** → visual inconsistencies
 
+## Asset Pipeline (Blender-centric)
+
+Asset sources are being migrated from `src/bin/Data/` to a repo-root **`Data/`**
+(git-ignored) and converted to Blender-native glTF/PNG by Python tools in
+`tools/`. Phase 1 (copy) and Phase 2 (texture + BMD converters, full run) are
+done; build integration (Phase 3) is not. For BMD/OZJ/OZT format details, the
+converters, orientation handling, drag-drop `Png-to-OZJ.bat`, and current status,
+see [`docs/asset-pipeline.md`](docs/asset-pipeline.md). **Read it before touching
+asset formats, converters, or `Data/`.**
+
 ## References
 - Full build documentation: [`BUILD_AND_TEST.md`](BUILD_AND_TEST.md)
 - Coding rules: [`docs/CODING_RULES.md`](docs/CODING_RULES.md)
 - Build guide: [`docs/build-guide.md`](docs/build-guide.md)
+- Asset pipeline: [`docs/asset-pipeline.md`](docs/asset-pipeline.md)
