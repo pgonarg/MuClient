@@ -367,11 +367,11 @@ async function addObjectNode(o){
   node.scale.setScalar(o.scale);
   if(tmpl){
     const corr = new THREE.Group(); corr.rotation.x = Math.PI/2; // cancel MU_Orient (-90X)
-    corr.add(tmpl.clone(true)); node.add(corr);
+    corr.add(tmpl.clone(true)); node.add(corr); o.missing = false;
   } else {
     const ph = new THREE.Mesh(new THREE.BoxGeometry(80,80,160),
       new THREE.MeshStandardMaterial({color:0xcc4444}));
-    ph.position.z=80; node.add(ph);            // missing model placeholder
+    ph.position.z=80; node.add(ph); o.missing = true;   // missing model placeholder
   }
   node.userData.obj = o; o.node = node; world.add(node);
 }
@@ -413,9 +413,11 @@ async function loadWorld(n){
   // instance (batched to keep UI responsive)
   for(let i=0;i<objects.length;i++){ await addObjectNode(objects[i]); if(i%200===0) status(`Placing objects ${i}/${objects.length}…`); }
   rebuildList();
+  const missing = objects.filter(o=>o.missing).length, ok = objects.length-missing;
   $('#objCount').textContent = `World ${n}: ${objects.length} objects`;
   ['#add','#save'].forEach(s=>$(s).disabled=false);
-  status(`World ${n} loaded — ${objects.length} objects. Click to select.`);
+  const warn = missing? ` — ⚠ ${missing} missing model(s) from ${objectDir}/ (shown as red boxes)` : '';
+  status(`World ${n}: ${ok} models loaded, ${missing} placeholders.${warn}`);
   // frame terrain
   const c=TERRAIN_SIZE*TERRAIN_SCALE/2; controls.target.set(c,0,c);
   camera.position.set(c, 12000, c+14000); controls.update();
